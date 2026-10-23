@@ -5,6 +5,64 @@
 const SLUG = /^[a-z0-9_-]+$/;
 const HF_REPO = /^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 
+function parseParams(text) {
+  if (!text) return null;
+  const match = /^([\d.]+)\s*([KMG])?$/i.exec(String(text).trim());
+  if (!match) return null;
+  const scale = { k: 1e3, m: 1e6, g: 1e9 }[(match[2] || "").toLowerCase()] || 1;
+  return Math.round(parseFloat(match[1]) * scale);
+}
+
+// Live cluster panel metrics (plan: cells filled, unique checkpoints, params,
+// est. disk, est. RAM/VRAM, workers). RAM estimate: on-disk weights x 1.3
+// plus 256 MB per worker process.
+export function clusterMetrics(state, models) {
+  const byId = new Map(models.map((model) => [model.id, model]));
+  const filled = state.cells.filter(
+    (cell) => cell.id && cell.views.length > 0 && (cell.model !== "custom-hf-repo" || cell.customRepo.trim())
+  ).length;
+
+  const checkpoints = new Map();
+  for (const cell of state.cells) {
+    const entry = byId.get(cell.model);
+    const isCustom = !entry || entry.custom;
+    const hfRepo = isCustom ? cell.customRepo.trim() : entry.hf_repo;
+    const revision = isCustom ? "main" : entry.revision;
+    const subfolder = isCustom ? null : entry.subfolder;
+    const key = `${hfRepo}@${revision}/${subfolder || ""}`;
+    if (!checkpoints.has(key)) {
+      checkpoints.set(key, {
+        params: isCustom ? null : parseParams(entry.params),
+        bytes: isCustom ? null : entry.download_bytes,
+      });
+    }
+  }
+
+  let params = 0;
+  let bytes = 0;
+  let unknown = 0;
+  for (const checkpoint of checkpoints.values()) {
+    if (checkpoint.params == null || checkpoint.bytes == null) {
+      unknown += 1;
+      continue;
+    }
+    params += checkpoint.params;
+    bytes += checkpoint.bytes;
+  }
+
+  const workers = state.cells.length;
+  return {
+    filled,
+    totalSlots: 8,
+    checkpoints: checkpoints.size,
+    params,
+    bytes,
+    ramBytes: bytes > 0 ? Math.round(bytes * 1.3 + workers * 256 * 1024 * 1024) : 0,
+    workers,
+    unknown,
+  };
+}
+
 export function questionToManifest(question) {
   const out = { type: question.type, instructions: question.instructions };
   if (question.type === "choice") {

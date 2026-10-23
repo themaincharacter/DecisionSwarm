@@ -271,3 +271,57 @@ td.warn {
 .validation.bad {
   color: #f3c1c1;
 }
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.metric {
+  background: var(--bg);
+  border: 1px solid var(--panel-edge);
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.metric-label {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.metric-value {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 12px 0 8px;
+}
+
+progress {
+  width: 100%;
+  height: 8px;
+}
+
+.log {
+  margin-top: 8px;
+  max-height: 140px;
+  overflow-y: auto;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+
+.log .error {
+  color: #f3c1c1;
+}

@@ -41,7 +41,15 @@
 
       <section id="cluster-panel" class="panel">
         <h2>Cluster</h2>
-        <p class="placeholder">Live cluster metrics land next.</p>
+        <div id="cluster-metrics" class="metrics"></div>
+        <p id="cluster-hint" class="hint"></p>
+        <div class="actions">
+          <input id="submit-dest" type="text" value="./packs/my-swarm" aria-label="pack output directory" />
+          <button id="download-models" type="button">Download models</button>
+          <button id="submit-pack" type="button">Submit pack</button>
+        </div>
+        <progress id="download-progress" max="1" value="0"></progress>
+        <div id="engine-log" class="log" role="log"></div>
       </section>
 
       <section id="models-panel" class="panel">

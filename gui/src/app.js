@@ -4,8 +4,8 @@
 // switches) re-render a section; plain typing mutates state directly so focus
 // is never stolen.
 
-import { listModels, runningInTauri } from "./bridge.js";
-import { toManifest, validateState } from "./manifest.js";
+import { listModels, downloadModels, runningInTauri, submitPack } from "./bridge.js";
+import { clusterMetrics, toManifest, validateState } from "./manifest.js";
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -329,7 +329,85 @@ function renderCells() {
   $("#cell-count").value = String(state.cells.length);
 }
 
+function formatBytes(value) {
+  if (!value) return "—";
+  if (value >= 1e9) return `${(value / 1e9).toFixed(2)} GB`;
+  return `${(value / 1e6).toFixed(0)} MB`;
+}
+
+function formatParams(value) {
+  if (!value) return "—";
+  return `${(value / 1e6).toFixed(0)}M`;
+}
+
+function metricTile(label, value) {
+  return el("div", { className: "metric" },
+    el("span", { className: "metric-label" }, label),
+    el("span", { className: "metric-value" }, value));
+}
+
+function renderCluster() {
+  const metrics = clusterMetrics(state, models);
+  const suffix = metrics.unknown > 0 ? " ± custom" : "";
+  $("#cluster-metrics").replaceChildren(
+    metricTile("cells filled", `${metrics.filled} / ${metrics.totalSlots}`),
+    metricTile("unique checkpoints", String(metrics.checkpoints)),
+    metricTile("total params", formatParams(metrics.params) + suffix),
+    metricTile("est. disk", formatBytes(metrics.bytes) + suffix),
+    metricTile("est. RAM/VRAM", formatBytes(metrics.ramBytes) + suffix),
+    metricTile("workers", String(metrics.workers))
+  );
+  $("#cluster-hint").textContent =
+    "Estimates: disk = checkpoint weights · RAM/VRAM ≈ weights × 1.3 + 256 MB per worker." +
+    (metrics.unknown > 0 ? " Custom models carry no size data yet." : "");
+  const progress = $("#download-progress");
+  progress.max = Math.max(1, metrics.checkpoints);
+}
+
+function appendLog(line, className = "") {
+  const log = $("#engine-log");
+  const entry = document.createElement("div");
+  if (className) entry.className = className;
+  entry.textContent = line;
+  log.append(entry);
+  log.scrollTop = log.scrollHeight;
+}
+
+async function handleDownload() {
+  const progress = $("#download-progress");
+  progress.value = 0;
+  appendLog("Downloading models to the shared cache…");
+  let done = 0;
+  try {
+    await downloadModels(JSON.stringify(toManifest(state, models)), null, (line) => {
+      done += 1;
+      progress.value = Math.min(done / Math.max(1, Number(progress.max)), 1);
+      appendLog(line);
+    });
+    appendLog("Download complete.");
+  } catch (error) {
+    appendLog(`Download failed: ${error}`, "error");
+  }
+}
+
+async function handleSubmit() {
+  const problems = validateState(state);
+  if (problems.length > 0) {
+    appendLog(`Cannot submit: ${problems[0]}`, "error");
+    return;
+  }
+  const dest = $("#submit-dest").value.trim();
+  appendLog(`Submitting pack to ${dest}…`);
+  try {
+    const summary = await submitPack(JSON.stringify(toManifest(state, models)), dest, null);
+    appendLog(`Built ${summary.pack} — cells: ${(summary.cells || []).join(", ")}`);
+  } catch (error) {
+    appendLog(`Submit failed: ${error}`, "error");
+  }
+}
+
 function renderValidation() {
+  renderCluster();
   const problems = validateState(state);
   const node = $("#validation");
   if (problems.length === 0) {
@@ -391,7 +469,9 @@ function boot() {
     state.views.push({ name: "", type: "text" });
     renderAll();
   });
-  window.__decisionSwarm = { state, toManifest, validateState };
+  $("#download-models").addEventListener("click", handleDownload);
+  $("#submit-pack").addEventListener("click", handleSubmit);
+  window.__decisionSwarm = { state, toManifest, validateState, clusterMetrics, renderAll };
 }
 
 async function loadModels() {

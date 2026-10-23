@@ -99,29 +99,37 @@ export async function listModels() {
   return MOCK_MODELS;
 }
 
-export async function writeManifest(json, path) {
+export async function downloadModels(manifestJson, modelsDir = null, onLine = () => {}) {
   if (isTauri) {
-    return invoke("write_manifest", { json, path });
+    const unlisten = await window.__TAURI__.event.listen("engine-line", (event) => onLine(event.payload));
+    try {
+      return await invoke("download_models", { manifestJson, modelsDir });
+    } finally {
+      unlisten();
+    }
   }
-  console.log("[mock] writeManifest ->", path); // eslint-disable-line no-console
-  return path;
+  const manifest = JSON.parse(manifestJson);
+  const ids = [...new Set(manifest.cells.map((cell) => cell.model))];
+  for (const id of ids) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    onLine(`${id}  downloaded  (into the shared cache)`);
+  }
+  return "ok";
 }
 
-export async function fetchModels(manifestPath, modelsDir = null) {
+export async function submitPack(manifestJson, dest, modelsDir = null) {
   if (isTauri) {
-    return invoke("fetch_models", { manifestPath, modelsDir });
-  }
-  console.log("[mock] fetchModels ->", manifestPath); // eslint-disable-line no-console
-  return "downloaded  laya-vision  thaitea/laya-vision  (804000000 bytes)";
-}
-
-export async function buildPack(manifestPath, dest, modelsDir = null) {
-  if (isTauri) {
-    const raw = await invoke("build_pack", { manifestPath, dest, modelsDir });
+    const raw = await invoke("submit_pack", { manifestJson, dest, modelsDir });
     return JSON.parse(raw);
   }
-  console.log("[mock] buildPack ->", dest); // eslint-disable-line no-console
-  return { pack: dest, name: "browser-swarm", cells: [], models: [] };
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  const manifest = JSON.parse(manifestJson);
+  return {
+    pack: dest,
+    name: manifest.name,
+    cells: manifest.cells.map((cell) => cell.id),
+    models: [],
+  };
 }
 
 export function runningInTauri() {
