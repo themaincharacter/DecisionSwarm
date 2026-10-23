@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Decision Swarm</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Decision Swarm</h1>
+      <p class="subtitle">
+        Assemble a swarm of Laya decision-model sensors over one observation.
+      </p>
+    </header>
+
+    <main>
+      <section id="swarm-panel" class="panel">
+        <h2>Swarm</h2>
+        <p class="placeholder">The cell grid lands next.</p>
+      </section>
+
+      <section id="cluster-panel" class="panel">
+        <h2>Cluster</h2>
+        <p class="placeholder">Live cluster metrics land next.</p>
+      </section>
+
+      <section id="models-panel" class="panel">
+        <h2>Model registry</h2>
+        <div id="models-status" class="status" role="status">Loading models…</div>
+        <table id="models-table">
+          <thead>
+            <tr>
+              <th>id</th>
+              <th>checkpoint</th>
+              <th>modality</th>
+              <th>params</th>
+              <th>license</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
