@@ -12,8 +12,9 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import shutil
 import subprocess
-import venv
+import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,6 +27,9 @@ ENVS_DIR_NAME = ".decision-swarm/envs"
 
 ENVS_DIR_ENV = "DECISION_SWARM_ENVS"
 """Environment variable overriding the env root."""
+
+BASE_PYTHON_ENV = "DECISION_SWARM_PYTHON"
+"""Interpreter used to create the envs; overrides the automatic choice."""
 
 Installer = Callable[[Path, Sequence[str]], None]
 """Installs requirements into a venv given its python executable."""
@@ -101,6 +105,49 @@ def cell_envs(
     return envs
 
 
+def _frozen() -> bool:
+    """True inside a frozen launcher (PyInstaller), which is not a Python interpreter."""
+    return bool(getattr(sys, "frozen", False))
+
+
+def base_interpreter() -> Path:
+    """Interpreter used to create the per-package envs.
+
+    ``$DECISION_SWARM_PYTHON`` wins. Otherwise the running interpreter, unless
+    that is the frozen launcher — which cannot create venvs — in which case the
+    first ``python3``/``python`` on ``PATH`` is used.
+    """
+    override = os.environ.get(BASE_PYTHON_ENV)
+    if override:
+        return Path(override)
+    if not _frozen():
+        return Path(sys.executable)
+    for name in ("python3", "python"):
+        found = shutil.which(name)
+        if found:
+            return Path(found)
+    raise EnvError(
+        "no Python interpreter available to create envs with: install Python 3 "
+        f"or set {BASE_PYTHON_ENV} to a Python executable"
+    )
+
+
+def _create_venv(base: Path, path: Path, *, with_pip: bool) -> None:
+    """Create a venv at ``path`` from the ``base`` interpreter.
+
+    ``venv.create`` always uses ``sys.executable`` — the launcher itself when
+    frozen — so the base interpreter is invoked explicitly instead.
+    """
+    args = [str(base), "-m", "venv"]
+    if not with_pip:
+        args.append("--without-pip")
+    args.append(str(path))
+    try:
+        subprocess.run(args, check=True)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise EnvError(f"creating the venv at {path} with {base} failed: {exc}") from exc
+
+
 def default_installer(python: Path, requirements: Sequence[str]) -> None:
     """Install requirements with the venv's pip."""
     try:
@@ -114,7 +161,7 @@ def default_installer(python: Path, requirements: Sequence[str]) -> None:
 def ensure_venv(env: CellEnv, *, with_pip: bool = True) -> Path:
     """Create the venv if it does not exist yet; return its python executable."""
     if not env.python.exists():
-        venv.create(env.path, with_pip=with_pip)
+        _create_venv(base_interpreter(), env.path, with_pip=with_pip)
     return env.python
 
 

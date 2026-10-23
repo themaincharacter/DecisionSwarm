@@ -23,6 +23,7 @@ AGENTS.md
 node_modules/
 gui/src-tauri/target/
 gui/src-tauri/gen/
+gui/src-tauri/binaries/
 
 # Agent session handoff briefs (local working notes, not source)
 .handoffs/

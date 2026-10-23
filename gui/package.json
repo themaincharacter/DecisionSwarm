@@ -5,7 +5,9 @@
   "description": "Decision Swarm desktop app (Tauri shell + web UI)",
   "scripts": {
     "dev": "tauri dev",
-    "build": "tauri build"
+    "sidecar": "node scripts/sidecar.mjs",
+    "prebuild": "node scripts/sidecar.mjs",
+    "build": "tauri build --config src-tauri/bundle.release.json"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

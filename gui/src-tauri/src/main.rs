@@ -2,8 +2,9 @@
 //
 // All pack logic lives in the decision-swarm Python package; the shell drives
 // it as a CLI with JSON output. Set DECISION_SWARM_CLI to point at the
-// PyInstaller launcher (or any decision-swarm entrypoint); the bundled app
-// ships that launcher as a sidecar.
+// PyInstaller launcher (or any decision-swarm entrypoint); release bundles
+// ship that launcher as a sidecar (bundle > externalBin, added on top of
+// tauri.conf.json by bundle.release.json at build time).
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -15,6 +16,18 @@ use tauri::Emitter;
 
 fn cli_names_in(dir: &Path) -> Vec<PathBuf> {
     vec![dir.join("decision-swarm"), dir.join("decision-swarm.exe")]
+}
+
+/// Directories a bundled sidecar can live in: beside the app executable
+/// (Windows installers, Linux packages, macOS ``Contents/MacOS``) plus the
+/// macOS ``Contents/Resources`` fallback.
+fn bundle_dirs(exe_dir: &Path) -> Vec<PathBuf> {
+    let mut dirs = vec![exe_dir.to_path_buf()];
+    if let Some(parent) = exe_dir.parent() {
+        dirs.push(parent.join("Resources"));
+    }
+    dirs.push(exe_dir.join("resources"));
+    dirs
 }
 
 fn dev_cli_candidates(root: &Path) -> Vec<PathBuf> {
@@ -58,9 +71,11 @@ fn cli_program() -> Result<String, String> {
     }
     if let Ok(executable) = std::env::current_exe() {
         if let Some(dir) = executable.parent() {
-            for candidate in cli_names_in(dir) {
-                if candidate.is_file() {
-                    return Ok(candidate.display().to_string());
+            for search in bundle_dirs(dir) {
+                for candidate in cli_names_in(&search) {
+                    if candidate.is_file() {
+                        return Ok(candidate.display().to_string());
+                    }
                 }
             }
         }
@@ -204,5 +219,18 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         assert_eq!(find_dev_cli(&root), None);
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn bundle_dirs_cover_the_app_layouts() {
+        let macos = Path::new("/Applications/Decision Swarm.app/Contents/MacOS");
+        assert_eq!(
+            bundle_dirs(macos),
+            vec![
+                macos.to_path_buf(),
+                Path::new("/Applications/Decision Swarm.app/Contents/Resources").to_path_buf(),
+                macos.join("resources"),
+            ]
+        );
     }
 }

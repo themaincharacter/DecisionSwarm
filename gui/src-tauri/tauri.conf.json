@@ -20,7 +20,14 @@
     }
   },
   "bundle": {
-    "active": false,
+    "active": true,
+    "targets": "all",
+    "category": "DeveloperTool",
+    "publisher": "Decision Swarm contributors",
+    "copyright": "Copyright (c) 2026 Decision Swarm contributors",
+    "license": "Apache-2.0",
+    "shortDescription": "Assemble a swarm of Laya decision-model sensors over one observation.",
+    "longDescription": "Decision Swarm desktop app: configure a swarm of decision-model cells over one observation, download their checkpoints, and package the swarm as a runnable artifact. The decision-swarm engine is bundled — no Python or git checkout required.",
     "icon": [
       "icons/icon.png",
       "icons/32x32.png",
@@ -28,6 +35,16 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "linux": {
+      "deb": {
+        "section": "utils"
+      }
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      }
+    }
   }
 }

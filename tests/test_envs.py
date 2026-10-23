@@ -76,3 +76,44 @@ def test_cells_without_a_package_source_are_rejected() -> None:
     swarm = manifest_mod.parse_manifest(NO_SOURCE)
     with pytest.raises(envs.EnvError, match="no package_source"):
         envs.cell_envs(swarm, envs_root=sys.prefix)  # root never used
+
+
+def test_base_interpreter_uses_the_running_python(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(envs.BASE_PYTHON_ENV, raising=False)
+    monkeypatch.setattr(envs, "_frozen", lambda: False)
+
+    assert envs.base_interpreter() == Path(sys.executable)
+
+
+def test_base_interpreter_override_wins(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv(envs.BASE_PYTHON_ENV, str(tmp_path / "python3"))
+    monkeypatch.setattr(envs, "_frozen", lambda: True)
+
+    assert envs.base_interpreter() == tmp_path / "python3"
+
+
+def test_frozen_launcher_falls_back_to_path_python(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.delenv(envs.BASE_PYTHON_ENV, raising=False)
+    monkeypatch.setattr(envs, "_frozen", lambda: True)
+    found = tmp_path / "python3"
+    found.write_text("", encoding="utf-8")
+    monkeypatch.setattr(
+        envs.shutil, "which", lambda name: str(found) if name == "python3" else None
+    )
+
+    assert envs.base_interpreter() == found
+
+
+def test_frozen_launcher_without_any_python_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(envs.BASE_PYTHON_ENV, raising=False)
+    monkeypatch.setattr(envs, "_frozen", lambda: True)
+    monkeypatch.setattr(envs.shutil, "which", lambda name: None)
+
+    with pytest.raises(envs.EnvError, match="DECISION_SWARM_PYTHON"):
+        envs.base_interpreter()
