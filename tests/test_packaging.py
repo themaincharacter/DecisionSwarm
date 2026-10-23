@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from decision_swarm import cache, pack, registry
+from decision_swarm import cache, envs, pack, registry
 from decision_swarm.runtime import orchestrator
 
 
@@ -95,10 +95,12 @@ def test_child_env_puts_source_root_on_pythonpath(
 def test_models_dir_and_envs_dir_defaults_are_under_home(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path))
+    # ``Path.home()`` consults ``HOME`` on POSIX but ``USERPROFILE`` (then
+    # ``HOMEDRIVE``/``HOMEPATH``) on Windows, so patch the lookup itself rather
+    # than a single environment variable.
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     monkeypatch.delenv(cache.MODELS_DIR_ENV, raising=False)
-    monkeypatch.delenv("DECISION_SWARM_ENVS", raising=False)
-    from decision_swarm import envs
+    monkeypatch.delenv(envs.ENVS_DIR_ENV, raising=False)
 
     assert cache.models_dir() == tmp_path / cache.DEFAULT_MODELS_DIR_NAME
     assert envs.envs_dir() == tmp_path / envs.ENVS_DIR_NAME
