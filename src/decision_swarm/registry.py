@@ -18,7 +18,10 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:  # pragma: no cover
+    from decision_swarm.manifest import CellSpec
 
 REGISTRY_RELATIVE_PATH = ("registry", "models.json")
 """Location of the registry file inside the repository."""
@@ -144,3 +147,17 @@ def resolve_model(model: str, registry: Mapping[str, ModelEntry] | None = None) 
     if _HF_REPO_RE.match(model):
         return ModelEntry(id=model, hf_repo=model, revision="main", custom=True)
     raise RegistryError(f"unknown model {model!r}: not a registry id or Hugging Face repo id")
+
+
+def resolve_runtime(
+    cell: "CellSpec", registry: Mapping[str, ModelEntry] | None = None
+) -> tuple[str | None, str | None]:
+    """Effective ``(package_source, loader)`` for a cell.
+
+    Explicit ``cell.runtime`` pins win over the resolved registry entry.
+    """
+    entry = resolve_model(cell.model, registry)
+    runtime = cell.runtime
+    package_source = runtime.package_source if runtime is not None else entry.package_source
+    loader = runtime.loader if runtime is not None else entry.loader
+    return package_source, loader
