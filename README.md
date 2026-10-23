@@ -31,11 +31,11 @@ over the views it is bound to, in a single forward pass with calibrated probabil
 
 ## Download
 
-The GitHub Releases page carries ready-to-run installers built by CI on every
-`v*` tag — Windows (`.msi`, `-setup.exe`), macOS (`.dmg`) and Linux (`.deb`,
-`.rpm`, `.AppImage`), for x64 and arm64 — alongside the standalone
-`decision-swarm` CLI binaries. The GUI bundles the engine, so building a swarm
-needs no Python and no git checkout (models download on first use into the
+The GitHub Releases page carries ready-to-run apps built by CI on every
+`v*` tag — Windows (portable `.zip`, just unzip and run), macOS (`.dmg`) and
+Linux (`.deb`, `.rpm`, `.AppImage`), for x64 and arm64 — alongside the standalone
+`decision-swarm-cli-*` CLI binaries. The GUI bundles the engine, so building a
+swarm needs no Python and no git checkout (models download on first use into the
 shared cache). See `gui/README.md` for how bundles are built and signed.
 
 ## Development

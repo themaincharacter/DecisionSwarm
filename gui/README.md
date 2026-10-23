@@ -57,8 +57,9 @@ npm install
 npm run build        # copies dist/decision-swarm into src-tauri/binaries/ first
 ```
 
-Installers land in `src-tauri/target/release/bundle/`: `.deb` / `.rpm` /
-`.AppImage` (Linux), `.dmg` (macOS), `-setup.exe` / `.msi` (Windows).
+Bundles land in `src-tauri/target/release/bundle/`: `.deb` / `.rpm` / `.AppImage`
+(Linux), `.dmg` (macOS), and a portable `.zip` for Windows — no installer there,
+just unzip and run `decision-swarm-gui.exe`.
 
 How it fits together:
 
@@ -74,6 +75,11 @@ How it fits together:
 - At runtime the shell looks for the launcher beside the app executable first
   (then `Contents/Resources` on macOS, then PATH), so `models`, `fetch` and
   `build` all work from the installed app.
+- Windows is portable by design: `tauri.windows.conf.json` sets
+  `bundle.targets: []` (no `.msi`/NSIS), and the workflow zips
+  `decision-swarm-gui.exe` + the engine sidecar. The app needs the WebView2
+  runtime (ships with Windows 11 and current Windows 10); to keep its own data
+  beside the exe see `app > appDirectoriesOverride` in the Tauri config.
 
 Signing: unsigned bundles run, but trigger macOS Gatekeeper / Windows
 SmartScreen warnings. For signed and notarized macOS builds set the repository
