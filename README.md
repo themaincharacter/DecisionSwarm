@@ -111,6 +111,16 @@ is validated in `manifest.py`):
       },
       "runtime": {"package_source": "git+https://github.com/r33drichards/laya-vision",
                   "loader": "load_vlm"}
+    },
+    {
+      "id": "dom_sensor",
+      "model": "convaiinnovations/laya",
+      "modality": "text",
+      "views": ["dom", "classes"],
+      "default_questions": {
+        "submit_button": {"type": "choice", "instructions": "Which element is the submit button?",
+                          "criteria": {"a": "the input with value Send", "b": "the button labeled Send"}}
+      }
     }
   ]
 }
