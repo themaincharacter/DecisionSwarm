@@ -157,7 +157,7 @@ def _parse_criteria(qtype: str, raw: Any, path: str) -> Criteria:
     )
 
 
-def _parse_question(name: str, raw: Any, path: str) -> QuestionSpec:
+def parse_question(name: str, raw: Any, path: str) -> QuestionSpec:
     _require_slug(name, path)
     if not isinstance(raw, Mapping):
         raise _fail(path, "must be an object with 'type' and 'instructions'")
@@ -232,7 +232,7 @@ def _parse_cell(raw: Any, index: int, known_views: set[str], seen_ids: set[str])
     if not isinstance(raw_questions, Mapping):
         raise _fail(f"{path}.default_questions", "must be an object of name -> question")
     questions = tuple(
-        _parse_question(name, question, f"{path}.default_questions.{name}")
+        parse_question(name, question, f"{path}.default_questions.{name}")
         for name, question in raw_questions.items()
     )
 
@@ -278,7 +278,7 @@ def parse_manifest(data: Any) -> SwarmManifest:
     )
 
 
-def _question_to_dict(question: QuestionSpec) -> dict[str, Any]:
+def question_to_dict(question: QuestionSpec) -> dict[str, Any]:
     out: dict[str, Any] = {"type": question.type, "instructions": question.instructions}
     if question.criteria is not None:
         out["criteria"] = question.criteria
@@ -297,7 +297,7 @@ def to_dict(manifest: SwarmManifest) -> dict[str, Any]:
         }
         if cell.default_questions:
             entry["default_questions"] = {
-                question.name: _question_to_dict(question) for question in cell.default_questions
+                question.name: question_to_dict(question) for question in cell.default_questions
             }
         if cell.runtime is not None:
             entry["runtime"] = {
