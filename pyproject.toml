@@ -32,5 +32,9 @@ decision-swarm = "decision_swarm.cli:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/decision_swarm"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"registry/models.json" = "decision_swarm/data/registry/models.json"
+"templates/runtime" = "decision_swarm/data/templates/runtime"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

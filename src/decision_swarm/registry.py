@@ -26,6 +26,9 @@ if TYPE_CHECKING:  # pragma: no cover
 REGISTRY_RELATIVE_PATH = ("registry", "models.json")
 """Location of the registry file inside the repository."""
 
+BUNDLED_RELATIVE_PATH = ("data", "registry", "models.json")
+"""Registry copy bundled into wheels and frozen executables."""
+
 REGISTRY_ENV = "DECISION_SWARM_REGISTRY"
 """Environment variable overriding the registry file location."""
 
@@ -71,11 +74,15 @@ class ModelEntry:
 
 
 def default_registry_path() -> Path:
-    """Resolve the registry file: ``$DECISION_SWARM_REGISTRY``, then the repo checkout."""
+    """Resolve the registry file: ``$DECISION_SWARM_REGISTRY``, bundled copy, repo checkout."""
     env_path = os.environ.get(REGISTRY_ENV)
     if env_path:
         return Path(env_path)
-    for parent in Path(__file__).resolve().parents:
+    module_dir = Path(__file__).resolve().parent
+    bundled = module_dir.joinpath(*BUNDLED_RELATIVE_PATH)
+    if bundled.is_file():
+        return bundled
+    for parent in module_dir.parents:
         candidate = parent.joinpath(*REGISTRY_RELATIVE_PATH)
         if candidate.is_file():
             return candidate

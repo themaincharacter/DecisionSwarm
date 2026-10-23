@@ -101,12 +101,25 @@ def plan_cells(
     return plans
 
 
+def _worker_source_root() -> str:
+    """Directory that makes ``decision_swarm`` importable for workers.
+
+    Workers run on the cell env's interpreter, which has the model stack but
+    not decision_swarm: this root goes on their PYTHONPATH. In a frozen
+    executable the package only exists as bytecode, so the executable bundles
+    the pure-Python sources under ``decision_swarm_src``.
+    """
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        return str(Path(meipass) / "decision_swarm_src")
+    return str(Path(__file__).resolve().parents[2])
+
+
 def _child_env() -> dict[str, str]:
     """Environment for workers: decision_swarm importable in any interpreter."""
     env = dict(os.environ)
-    package_root = str(Path(__file__).resolve().parents[2])
     existing = env.get("PYTHONPATH")
-    env["PYTHONPATH"] = package_root + (os.pathsep + existing if existing else "")
+    env["PYTHONPATH"] = _worker_source_root() + (os.pathsep + existing if existing else "")
     return env
 
 

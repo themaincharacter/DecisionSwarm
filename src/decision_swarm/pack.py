@@ -32,6 +32,9 @@ LOCKFILE_SCHEMA_VERSION = 1
 TEMPLATES_RELATIVE_PATH = ("templates", "runtime")
 """Location of the runtime templates inside the repository."""
 
+TEMPLATES_BUNDLED_PATH = ("data", "templates", "runtime")
+"""Template copy bundled into wheels and frozen executables."""
+
 
 class PackError(RuntimeError):
     """Raised when a pack cannot be built."""
@@ -64,8 +67,12 @@ def pack_module(name: str) -> str:
 
 
 def default_templates_dir() -> Path:
-    """Locate ``templates/runtime`` in the repository checkout."""
-    for parent in Path(__file__).resolve().parents:
+    """Locate the runtime templates: bundled copy, then the repository checkout."""
+    module_dir = Path(__file__).resolve().parent
+    bundled = module_dir.joinpath(*TEMPLATES_BUNDLED_PATH)
+    if bundled.is_dir():
+        return bundled
+    for parent in module_dir.parents:
         candidate = parent.joinpath(*TEMPLATES_RELATIVE_PATH)
         if candidate.is_dir():
             return candidate
