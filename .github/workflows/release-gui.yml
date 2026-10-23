@@ -134,7 +134,7 @@ jobs:
             "https://developer.microsoft.com/microsoft-edge/webview2/",
             "or directly: https://go.microsoft.com/fwlink/p/?LinkId=2124703"
           ) | Set-Content README.txt
-          Compress-Archive -Force -Path src-tauri/target/release/decision-swarm-gui.exe, src-tauri/target/release/decision-swarm.exe, README.txt -DestinationPath "$out/Decision Swarm_${version}_${{ matrix.arch }}-portable.zip"
+          Compress-Archive -Force -Path src-tauri/target/release/decision-swarm-gui.exe, src-tauri/target/release/decision-swarm.exe, README.txt -DestinationPath "$out/Decision Swarm_win_${version}_${{ matrix.arch }}-portable.zip"
 
       # Extension globs on purpose: each bundler leaves staging files/dirs
       # beside the installer (deb ar members, the AppImage AppDir, bundle_dmg.sh)
