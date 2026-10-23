@@ -22,6 +22,9 @@ from typing import Any, TextIO
 
 from decision_swarm.runtime import loaders, protocol
 
+WORKER_ROUTE = "_worker"
+"""Hidden CLI route: a frozen launcher spawns itself as a worker this way."""
+
 
 @dataclass(frozen=True)
 class WorkerConfig:
@@ -59,9 +62,11 @@ class WorkerConfig:
 
 
 def run_session(
-    predictor: loaders.Predictor, stdin: TextIO = sys.stdin, stdout: TextIO = sys.stdout
+    predictor: loaders.Predictor, stdin: TextIO | None = None, stdout: TextIO | None = None
 ) -> int:
     """Answer queries from stdin until shutdown or end-of-stream."""
+    stdin = sys.stdin if stdin is None else stdin
+    stdout = sys.stdout if stdout is None else stdout
     while True:
         try:
             message = protocol.read(stdin)

@@ -18,3 +18,6 @@ AGENTS.md
 
 # Decision Swarm local runtime artifacts
 .decision-swarm/
+
+# Agent session handoff briefs (local working notes, not source)
+.handoffs/

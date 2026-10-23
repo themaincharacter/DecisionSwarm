@@ -13,7 +13,7 @@ import sys
 from collections.abc import Callable, Sequence
 
 from decision_swarm import __version__, cache, envs, manifest, pack, query, registry
-from decision_swarm.runtime import loaders, orchestrator
+from decision_swarm.runtime import loaders, orchestrator, worker
 
 
 def _add_pack_argument(parser: argparse.ArgumentParser) -> None:
@@ -172,8 +172,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    args_list = list(sys.argv[1:] if argv is None else argv)
+    if args_list and args_list[0] == worker.WORKER_ROUTE:
+        from decision_swarm.runtime.worker import main as worker_main
+
+        return worker_main(args_list[1:])
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(args_list)
     handler: Callable[[argparse.Namespace], int] = args.handler
     try:
         return handler(args)

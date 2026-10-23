@@ -95,3 +95,24 @@ def test_run_reports_bad_payloads(
     bad.write_text(json.dumps({"views": {"nope": "x"}}), encoding="utf-8")
     assert cli.main(_run_argv(pack_dir, bad, tmp_path)) == 1
     assert "error" in capsys.readouterr().err
+
+
+def test_cli_worker_hidden_route(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Frozen launchers spawn themselves as workers via the hidden route."""
+    import io
+    import sys
+
+    from decision_swarm.runtime import protocol
+
+    config = json.dumps({"loader": "stub", "model": {"model_id": "x"}, "view_types": {}})
+    request = protocol.encode(protocol.QueryMessage(id=1, views={"dom": "<html>"}, questions={}))
+    stdin = io.StringIO(request + protocol.encode(protocol.ShutdownMessage()))
+    stdout = io.StringIO()
+    monkeypatch.setattr(sys, "stdin", stdin)
+    monkeypatch.setattr(sys, "stdout", stdout)
+
+    assert cli.main(["_worker", "--config", config]) == 0
+    stdout.seek(0)
+    response = protocol.read(stdout)
+    assert isinstance(response, protocol.ResultMessage)
+    assert response.id == 1

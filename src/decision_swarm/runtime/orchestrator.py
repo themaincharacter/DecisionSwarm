@@ -28,7 +28,7 @@ from decision_swarm.query import (
     SwarmResult,
     resolve_questions,
 )
-from decision_swarm.runtime import loaders, protocol
+from decision_swarm.runtime import loaders, protocol, worker
 
 
 class OrchestratorError(RuntimeError):
@@ -143,8 +143,21 @@ class WorkerHandle:
             },
             "view_types": dict(plan.view_types),
         }
+        same_interpreter = Path(plan.python).resolve() == Path(sys.executable).resolve()
+        if getattr(sys, "frozen", False) and same_interpreter:
+            # a frozen launcher has no importable package elsewhere: it spawns
+            # itself as the worker via the hidden route
+            command = [str(plan.python), worker.WORKER_ROUTE, "--config", json.dumps(config)]
+        else:
+            command = [
+                str(plan.python),
+                "-m",
+                "decision_swarm.runtime.worker",
+                "--config",
+                json.dumps(config),
+            ]
         process = subprocess.Popen(
-            [str(plan.python), "-m", "decision_swarm.runtime.worker", "--config", json.dumps(config)],
+            command,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
