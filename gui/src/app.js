@@ -471,7 +471,14 @@ function boot() {
   });
   $("#download-models").addEventListener("click", handleDownload);
   $("#submit-pack").addEventListener("click", handleSubmit);
-  window.__decisionSwarm = { state, toManifest, validateState, clusterMetrics, renderAll };
+  window.__decisionSwarm = {
+    state,
+    toManifest,
+    validateState,
+    clusterMetrics,
+    renderAll,
+    getManifest: () => toManifest(state, models),
+  };
 }
 
 async function loadModels() {

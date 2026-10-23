@@ -4,9 +4,9 @@ Assemble a **swarm of Laya decision-model sensors** over one observation, downlo
 required models once into a shared local cache, and package the configured swarm as a
 runnable artifact: an installable Python library and a bash-callable CLI.
 
-> **Status: Phases 0–3 done.** Core (manifest, registry, cache, packs), runtime
-> (workers, protocol, orchestrator) and the CLI + per-OS launcher builds are in place.
-> The GUI (Phase 4) is next. Functionality lands per the [Roadmap](#roadmap).
+> **Status: Phases 0–4 done.** Core (manifest, registry, cache, packs), runtime
+> (workers, protocol, orchestrator), the CLI + per-OS launcher builds, and the
+> desktop GUI are in place. Functionality lands per the [Roadmap](#roadmap).
 
 ## Concept
 
@@ -52,6 +52,17 @@ All four commands are implemented. `install` builds one venv per unique
 `laya`); `run` executes warm per-cell workers and prints the result schema (`--pretty` for
 humans, `--offline` to refuse uncached models). Binaries are built per-OS with PyInstaller
 via `decision-swarm.spec` (small ~20 MB launchers; weights resolve from the shared cache).
+
+## Desktop GUI
+
+`gui/` is a Tauri v2 app: a thin Rust shell around a vanilla-JS UI that drives the same
+`decision-swarm` engine through the CLI (`models --json`, `build --json`, `fetch
+--manifest`), so GUI and CLI produce identical packs. Define observation views and 2–8
+cells (models with per-model licenses, view bindings, typed `choice`/`score`/`noul`
+questions), watch the live cluster panel (checkpoints, params, disk/RAM estimates,
+workers), Download the models, and Submit — then run the pack from the CLI. The UI also
+runs in a plain browser against a mock bridge; see `gui/README.md` for dev setup and
+Linux build dependencies.
 
 ## Model registry
 
@@ -149,7 +160,7 @@ defaults so answers stay comparable across queries; each query may override them
 | **1 — Core** | manifest schema + validation, registry access, cache manager (fetch / sha256 / dedup), pack builder ✅ |
 | **2 — Runtime** | worker process + stdio protocol, env isolation, parallel cell execution, result schema ✅ |
 | **3 — CLI + exes** | `run` / `fetch` / `install` / `inspect`, offline mode, PyInstaller per-OS builds ✅ |
-| **4 — GUI** | Tauri app: cell grid, cluster panel, Download, Submit → pack |
+| **4 — GUI** | Tauri app: cell grid, cluster panel, Download, Submit → pack ✅ |
 | Deferred | aggregation/consensus, npm adapter, Godot addon, swarm-as-HTTP-server |
 
 ## Licensing
