@@ -21,7 +21,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-dependencies = []
+dependencies = ["huggingface_hub>=0.30"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
