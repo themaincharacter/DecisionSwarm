@@ -12,7 +12,7 @@ def test_help_lists_all_commands_and_exits_zero(capsys: pytest.CaptureFixture[st
         cli.main(["--help"])
     assert excinfo.value.code == 0
     out = capsys.readouterr().out
-    for command in ("inspect", "fetch", "install", "run"):
+    for command in ("inspect", "fetch", "install", "run", "build", "models"):
         assert command in out
 
 

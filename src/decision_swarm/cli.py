@@ -11,6 +11,7 @@ import argparse
 import json
 import sys
 from collections.abc import Callable, Sequence
+from dataclasses import asdict
 
 from decision_swarm import __version__, cache, envs, manifest, pack, query, registry
 from decision_swarm.runtime import loaders, orchestrator, worker
@@ -62,7 +63,7 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
 
 def _cmd_fetch(args: argparse.Namespace) -> int:
     """Download a pack's models into the shared cache (idempotent)."""
-    swarm = manifest.load_manifest(args.pack)
+    swarm = manifest.load_manifest(args.pack or args.manifest)
     entries = registry.load_registry()
     failures = 0
     for entry in pack.unique_entries(swarm, registry_entries=entries):
@@ -121,6 +122,52 @@ def _cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_build(args: argparse.Namespace) -> int:
+    """Build a swarm pack from a manifest (what the GUI's Submit calls)."""
+    swarm = manifest.load_manifest(args.manifest)
+    entries = registry.load_registry()
+    dest = pack.build_pack(swarm, args.dest, models_root=args.models_dir, registry_entries=entries)
+    models = pack.collect_models(swarm, models_root=args.models_dir, registry_entries=entries)
+    summary = {
+        "pack": str(dest),
+        "name": swarm.name,
+        "cells": [cell.id for cell in swarm.cells],
+        "models": [
+            {
+                "id": model.id,
+                "hf_repo": model.hf_repo,
+                "subfolder": model.subfolder,
+                "revision": model.revision,
+                "cached": model.cached,
+                "bytes": model.bytes,
+            }
+            for model in models
+        ],
+    }
+    if args.json:
+        print(json.dumps(summary, indent=2))
+    else:
+        print(f"built  {dest}  cells: {', '.join(summary['cells'])}")
+        for model in models:
+            state = "cached" if model.cached else "not cached"
+            print(f"  {model.id}  {state}  ({model.bytes} bytes)")
+    return 0
+
+
+def _cmd_models(args: argparse.Namespace) -> int:
+    """List known models (the GUI's model dropdown source)."""
+    entries = registry.load_registry()
+    if args.json:
+        print(json.dumps({"models": [asdict(entry) for entry in entries.values()]}, indent=2))
+        return 0
+    for entry in entries.values():
+        print(
+            f"{entry.id}  {entry.hf_repo or '-'}  {entry.modality or '-'}  "
+            f"{entry.params or '-'}  {entry.display_license}"
+        )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="decision-swarm",
@@ -141,9 +188,13 @@ def build_parser() -> argparse.ArgumentParser:
     inspect_parser.set_defaults(handler=_cmd_inspect)
 
     fetch_parser = subparsers.add_parser(
-        "fetch", help="pre-download a pack's models to the shared cache"
+        "fetch", help="pre-download a pack's (or manifest's) models to the shared cache"
     )
-    _add_pack_argument(fetch_parser)
+    fetch_source = fetch_parser.add_mutually_exclusive_group(required=True)
+    fetch_source.add_argument("--pack", metavar="DIR", help="path to the swarm pack directory")
+    fetch_source.add_argument(
+        "--manifest", metavar="FILE", help="path to a swarm.json (fetch without a pack)"
+    )
     _add_models_dir_argument(fetch_parser)
     fetch_parser.set_defaults(handler=_cmd_fetch)
 
@@ -167,6 +218,17 @@ def build_parser() -> argparse.ArgumentParser:
     output_group.add_argument("--json", action="store_true", help="print results as JSON (default)")
     output_group.add_argument("--pretty", action="store_true", help="print results in human-readable form")
     run_parser.set_defaults(handler=_cmd_run)
+
+    build_parser = subparsers.add_parser("build", help="build a swarm pack from a manifest")
+    build_parser.add_argument("--manifest", required=True, metavar="FILE", help="path to swarm.json")
+    build_parser.add_argument("--dest", required=True, metavar="DIR", help="pack output directory")
+    _add_models_dir_argument(build_parser)
+    build_parser.add_argument("--json", action="store_true", help="print a machine-readable summary")
+    build_parser.set_defaults(handler=_cmd_build)
+
+    models_parser = subparsers.add_parser("models", help="list known models from the registry")
+    models_parser.add_argument("--json", action="store_true", help="print the registry as JSON")
+    models_parser.set_defaults(handler=_cmd_models)
 
     return parser
 
