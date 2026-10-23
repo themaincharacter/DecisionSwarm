@@ -103,7 +103,12 @@ def cell_envs(
 
 def default_installer(python: Path, requirements: Sequence[str]) -> None:
     """Install requirements with the venv's pip."""
-    subprocess.run([str(python), "-m", "pip", "install", *requirements], check=True)
+    try:
+        subprocess.run([str(python), "-m", "pip", "install", *requirements], check=True)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise EnvError(
+            f"pip install into {python} failed ({', '.join(requirements)}): {exc}"
+        ) from exc
 
 
 def ensure_venv(env: CellEnv, *, with_pip: bool = True) -> Path:

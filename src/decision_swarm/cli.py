@@ -15,22 +15,6 @@ from collections.abc import Callable, Sequence
 from decision_swarm import __version__, cache, envs, manifest, pack, query, registry
 from decision_swarm.runtime import loaders, orchestrator
 
-_UNAVAILABLE_EXIT_CODE = 2
-"""Exit code for commands whose handlers are not implemented yet."""
-
-
-def _unavailable(command: str, phase: str) -> Callable[[argparse.Namespace], int]:
-    """Build a handler stub for a command that lands in a later phase."""
-
-    def handler(args: argparse.Namespace) -> int:
-        print(
-            f"decision-swarm: '{command}' is not implemented yet (planned for {phase})",
-            file=sys.stderr,
-        )
-        return _UNAVAILABLE_EXIT_CODE
-
-    return handler
-
 
 def _add_pack_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--pack", required=True, metavar="DIR", help="path to the swarm pack directory")
@@ -41,6 +25,14 @@ def _add_models_dir_argument(parser: argparse.ArgumentParser) -> None:
         "--models-dir",
         metavar="DIR",
         help="model cache location (default: ~/.decision-swarm/models, or $DECISION_SWARM_MODELS)",
+    )
+
+
+def _add_envs_dir_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--envs-dir",
+        metavar="DIR",
+        help="env location (default: ~/.decision-swarm/envs, or $DECISION_SWARM_ENVS)",
     )
 
 
@@ -86,6 +78,19 @@ def _cmd_fetch(args: argparse.Namespace) -> int:
     return 1 if failures else 0
 
 
+def _cmd_install(args: argparse.Namespace) -> int:
+    """Build one virtual environment per unique package source."""
+    swarm = manifest.load_manifest(args.pack)
+    entries = registry.load_registry()
+    planned = envs.cell_envs(swarm, envs_root=args.envs_dir, registry_entries=entries)
+    for env in planned:
+        existed = env.python.exists()
+        envs.build_env(env)
+        state = "reused" if existed else "built"
+        print(f"{state}  {env.package_source}  [{env.key}]  cells: {', '.join(env.shared_by)}")
+    return 0
+
+
 def _print_pretty(result: query.SwarmResult) -> None:
     for cell_id, cell in result.cells.items():
         print(f"{cell_id}  ({cell.model}, {cell.latency_ms:.0f} ms)")
@@ -108,7 +113,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         ]
         if missing:
             raise cache.CacheError(f"--offline: model(s) not in the cache: {', '.join(missing)}")
-    result = orchestrator.run(swarm, payload, registry_entries=entries)
+    result = orchestrator.run(swarm, payload, registry_entries=entries, envs_root=args.envs_dir)
     if args.pretty:
         _print_pretty(result)
     else:
@@ -147,11 +152,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_pack_argument(install_parser)
     _add_models_dir_argument(install_parser)
-    install_parser.set_defaults(handler=_unavailable("install", "Phase 2"))
+    _add_envs_dir_argument(install_parser)
+    install_parser.set_defaults(handler=_cmd_install)
 
     run_parser = subparsers.add_parser("run", help="run a pack against an observation")
     _add_pack_argument(run_parser)
     _add_models_dir_argument(run_parser)
+    _add_envs_dir_argument(run_parser)
     run_parser.add_argument("--input", required=True, metavar="FILE", help="observation payload (JSON)")
     run_parser.add_argument(
         "--offline", action="store_true", help="never touch the network; use the shared cache only"

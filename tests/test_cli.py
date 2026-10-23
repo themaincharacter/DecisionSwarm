@@ -36,16 +36,3 @@ def test_missing_command_is_a_usage_error() -> None:
     with pytest.raises(SystemExit) as excinfo:
         cli.main([])
     assert excinfo.value.code == 2
-
-
-@pytest.mark.parametrize(
-    "argv",
-    [
-        ["install", "--pack", "my-swarm"],
-    ],
-)
-def test_subcommands_report_not_implemented(
-    argv: list[str], capsys: pytest.CaptureFixture[str]
-) -> None:
-    assert cli.main(argv) == 2
-    assert "not implemented yet" in capsys.readouterr().err
