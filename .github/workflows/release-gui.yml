@@ -106,17 +106,20 @@ jobs:
         working-directory: gui
         run: npm run build
 
+      # Extension globs on purpose: each bundler leaves staging files/dirs
+      # beside the installer (deb ar members, the AppImage AppDir, bundle_dmg.sh)
+      # and a plain `bundle/<type>/*` would drag all of it into the release.
       - uses: actions/upload-artifact@v4
         with:
           name: gui-bundles-${{ matrix.triple }}
           if-no-files-found: error
           path: |
-            gui/src-tauri/target/release/bundle/dmg/*
-            gui/src-tauri/target/release/bundle/deb/*
-            gui/src-tauri/target/release/bundle/appimage/*
-            gui/src-tauri/target/release/bundle/rpm/*
-            gui/src-tauri/target/release/bundle/nsis/*
-            gui/src-tauri/target/release/bundle/msi/*
+            gui/src-tauri/target/release/bundle/dmg/*.dmg
+            gui/src-tauri/target/release/bundle/deb/*.deb
+            gui/src-tauri/target/release/bundle/appimage/*.AppImage
+            gui/src-tauri/target/release/bundle/rpm/*.rpm
+            gui/src-tauri/target/release/bundle/nsis/*.exe
+            gui/src-tauri/target/release/bundle/msi/*.msi
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -138,4 +141,10 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: flat/*
+          files: |
+            flat/*.dmg
+            flat/*.deb
+            flat/*.rpm
+            flat/*.AppImage
+            flat/*.msi
+            flat/*.exe
