@@ -43,11 +43,11 @@ jobs:
           bin=dist/decision-swarm
           ext=""
           if [ -f "$bin.exe" ]; then bin="$bin.exe"; ext=".exe"; fi
-          cp "$bin" "dist/decision-swarm-${{ runner.os }}$ext"
+          cp "$bin" "dist/decision-swarm-cli-${{ runner.os }}$ext"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: decision-swarm-${{ matrix.os }}
+          name: decision-swarm-cli-${{ matrix.os }}
           path: dist/decision-swarm-*
 
   release:
