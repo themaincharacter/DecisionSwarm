@@ -19,5 +19,10 @@ AGENTS.md
 # Decision Swarm local runtime artifacts
 .decision-swarm/
 
+# Node / Tauri build artifacts
+node_modules/
+gui/src-tauri/target/
+gui/src-tauri/gen/
+
 # Agent session handoff briefs (local working notes, not source)
 .handoffs/
