@@ -8,10 +8,12 @@ today.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from collections.abc import Callable, Sequence
 
-from decision_swarm import __version__, cache, manifest, pack, registry
+from decision_swarm import __version__, cache, envs, manifest, pack, query, registry
+from decision_swarm.runtime import loaders, orchestrator
 
 _UNAVAILABLE_EXIT_CODE = 2
 """Exit code for commands whose handlers are not implemented yet."""
@@ -84,6 +86,36 @@ def _cmd_fetch(args: argparse.Namespace) -> int:
     return 1 if failures else 0
 
 
+def _print_pretty(result: query.SwarmResult) -> None:
+    for cell_id, cell in result.cells.items():
+        print(f"{cell_id}  ({cell.model}, {cell.latency_ms:.0f} ms)")
+        for name, answer in cell.answers.items():
+            print(f"  {name}: {answer.type}={answer.value}  confidence={answer.confidence:.2f}")
+        for warning in cell.warnings:
+            print(f"  warning: {warning}")
+
+
+def _cmd_run(args: argparse.Namespace) -> int:
+    """Run a pack against one observation."""
+    swarm = manifest.load_manifest(args.pack)
+    payload = query.load_query(args.input, swarm)
+    entries = registry.load_registry()
+    if args.offline:
+        missing = [
+            model.id
+            for model in pack.collect_models(swarm, models_root=args.models_dir, registry_entries=entries)
+            if not model.cached
+        ]
+        if missing:
+            raise cache.CacheError(f"--offline: model(s) not in the cache: {', '.join(missing)}")
+    result = orchestrator.run(swarm, payload, registry_entries=entries)
+    if args.pretty:
+        _print_pretty(result)
+    else:
+        print(json.dumps(result.to_dict(), indent=2))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="decision-swarm",
@@ -127,7 +159,7 @@ def build_parser() -> argparse.ArgumentParser:
     output_group = run_parser.add_mutually_exclusive_group()
     output_group.add_argument("--json", action="store_true", help="print results as JSON (default)")
     output_group.add_argument("--pretty", action="store_true", help="print results in human-readable form")
-    run_parser.set_defaults(handler=_unavailable("run", "Phase 3"))
+    run_parser.set_defaults(handler=_cmd_run)
 
     return parser
 
@@ -138,7 +170,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     handler: Callable[[argparse.Namespace], int] = args.handler
     try:
         return handler(args)
-    except (manifest.ManifestError, registry.RegistryError, cache.CacheError) as exc:
+    except (
+        manifest.ManifestError,
+        query.QueryError,
+        registry.RegistryError,
+        cache.CacheError,
+        envs.EnvError,
+        loaders.LoaderError,
+        orchestrator.OrchestratorError,
+    ) as exc:
         print(f"decision-swarm: error: {exc}", file=sys.stderr)
         return 1
 

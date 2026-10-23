@@ -42,7 +42,6 @@ def test_missing_command_is_a_usage_error() -> None:
     "argv",
     [
         ["install", "--pack", "my-swarm"],
-        ["run", "--pack", "my-swarm", "--input", "obs.json"],
     ],
 )
 def test_subcommands_report_not_implemented(
