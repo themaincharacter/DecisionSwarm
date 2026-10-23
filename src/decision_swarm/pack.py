@@ -48,6 +48,8 @@ class PackModel:
     cached: bool
     bytes: int
     sha256: Mapping[str, str]
+    params: str | None = None
+    download_bytes: int | None = None
 
 
 def pack_slug(name: str) -> str:
@@ -76,6 +78,24 @@ def _render(text: str, mapping: Mapping[str, str]) -> str:
     return text
 
 
+def unique_entries(
+    manifest: SwarmManifest,
+    *,
+    registry_entries: Mapping[str, registry.ModelEntry] | None = None,
+) -> list[registry.ModelEntry]:
+    """Unique model entries used by the manifest's cells, in cell order."""
+    seen: set[tuple[str, str, str | None]] = set()
+    entries: list[registry.ModelEntry] = []
+    for cell in manifest.cells:
+        entry = registry.resolve_model(cell.model, registry_entries)
+        key = (entry.hf_repo or "", entry.revision or "", entry.subfolder)
+        if key in seen:
+            continue
+        seen.add(key)
+        entries.append(entry)
+    return entries
+
+
 def collect_models(
     manifest: SwarmManifest,
     *,
@@ -87,14 +107,8 @@ def collect_models(
     Digests come from the shared cache (read-only: nothing is downloaded);
     uncached checkpoints are recorded with ``cached: False`` and no digests.
     """
-    seen: set[tuple[str, str, str | None]] = set()
     models: list[PackModel] = []
-    for cell in manifest.cells:
-        entry = registry.resolve_model(cell.model, registry_entries)
-        key = (entry.hf_repo or "", entry.revision or "", entry.subfolder)
-        if key in seen:
-            continue
-        seen.add(key)
+    for entry in unique_entries(manifest, registry_entries=registry_entries):
         cached = True
         try:
             result = cache.fetch(entry, root=models_root, offline=True)
@@ -110,6 +124,8 @@ def collect_models(
                 cached=cached,
                 bytes=size,
                 sha256=digests,
+                params=entry.params,
+                download_bytes=entry.download_bytes,
             )
         )
     return models
@@ -180,6 +196,8 @@ def build_pack(
                 "hf_repo": model.hf_repo,
                 "subfolder": model.subfolder,
                 "revision": model.revision,
+                "params": model.params,
+                "download_bytes": model.download_bytes,
                 "cached": model.cached,
                 "bytes": model.bytes,
                 "sha256": dict(model.sha256),

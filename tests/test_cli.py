@@ -41,8 +41,6 @@ def test_missing_command_is_a_usage_error() -> None:
 @pytest.mark.parametrize(
     "argv",
     [
-        ["inspect", "--pack", "my-swarm"],
-        ["fetch", "--pack", "my-swarm"],
         ["install", "--pack", "my-swarm"],
         ["run", "--pack", "my-swarm", "--input", "obs.json"],
     ],

@@ -177,7 +177,8 @@ def verify(entry: ModelEntry, root: str | Path | None = None) -> bool:
     return True
 
 
-def _hub_download(repo_id: str, revision: str, target: Path, subfolder: str | None) -> None:
+def hub_download(repo_id: str, revision: str, target: Path, subfolder: str | None) -> None:
+    """Default downloader: ``huggingface_hub.snapshot_download`` into ``target``."""
     from huggingface_hub import snapshot_download
 
     snapshot_download(
@@ -219,7 +220,7 @@ def fetch(
         )
 
     directory.mkdir(parents=True, exist_ok=True)
-    download = downloader if downloader is not None else _hub_download
+    download = downloader if downloader is not None else hub_download
     download(entry.hf_repo or "", entry.revision or "", directory, entry.subfolder)
 
     total, hashes = _hash_files(directory, set_key)

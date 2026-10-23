@@ -11,7 +11,7 @@ import argparse
 import sys
 from collections.abc import Callable, Sequence
 
-from decision_swarm import __version__
+from decision_swarm import __version__, cache, manifest, pack, registry
 
 _UNAVAILABLE_EXIT_CODE = 2
 """Exit code for commands whose handlers are not implemented yet."""
@@ -42,6 +42,48 @@ def _add_models_dir_argument(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _cmd_inspect(args: argparse.Namespace) -> int:
+    """Print cells, models, sizes, and cache status for a pack."""
+    swarm = manifest.load_manifest(args.pack)
+    entries = registry.load_registry()
+    models = pack.collect_models(swarm, models_root=args.models_dir, registry_entries=entries)
+    print(f"pack: {swarm.name}")
+    print("views: " + ", ".join(f"{view.name} ({view.type})" for view in swarm.views))
+    print("cells:")
+    for cell in swarm.cells:
+        questions = ", ".join(question.name for question in cell.default_questions) or "-"
+        print(
+            f"  {cell.id}  {cell.model}  [{cell.modality}]"
+            f"  views: {', '.join(cell.views)}  questions: {questions}"
+        )
+    print("models:")
+    for model in models:
+        checkpoint = model.hf_repo + (f"/{model.subfolder}" if model.subfolder else "")
+        estimate = f"~{model.download_bytes // 1_000_000} MB" if model.download_bytes else "?"
+        cached = f"yes ({model.bytes} bytes)" if model.cached else "no"
+        print(f"  {model.id}  {checkpoint}  {model.params or '?'}  {estimate}  cached: {cached}")
+    print(f"cache: {cache.models_dir(args.models_dir)}")
+    return 0
+
+
+def _cmd_fetch(args: argparse.Namespace) -> int:
+    """Download a pack's models into the shared cache (idempotent)."""
+    swarm = manifest.load_manifest(args.pack)
+    entries = registry.load_registry()
+    failures = 0
+    for entry in pack.unique_entries(swarm, registry_entries=entries):
+        checkpoint = entry.hf_repo + (f"/{entry.subfolder}" if entry.subfolder else "")
+        try:
+            result = cache.fetch(entry, root=args.models_dir)
+        except (cache.CacheError, OSError) as exc:
+            print(f"decision-swarm: error: {exc}", file=sys.stderr)
+            failures += 1
+            continue
+        state = "downloaded" if result.downloaded else "already cached"
+        print(f"{entry.id}  {checkpoint}  {state}  ({result.bytes} bytes)")
+    return 1 if failures else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="decision-swarm",
@@ -59,14 +101,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_pack_argument(inspect_parser)
     _add_models_dir_argument(inspect_parser)
-    inspect_parser.set_defaults(handler=_unavailable("inspect", "Phase 1"))
+    inspect_parser.set_defaults(handler=_cmd_inspect)
 
     fetch_parser = subparsers.add_parser(
         "fetch", help="pre-download a pack's models to the shared cache"
     )
     _add_pack_argument(fetch_parser)
     _add_models_dir_argument(fetch_parser)
-    fetch_parser.set_defaults(handler=_unavailable("fetch", "Phase 1"))
+    fetch_parser.set_defaults(handler=_cmd_fetch)
 
     install_parser = subparsers.add_parser(
         "install", help="build per-package virtual environments for a pack"
@@ -94,7 +136,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     handler: Callable[[argparse.Namespace], int] = args.handler
-    return handler(args)
+    try:
+        return handler(args)
+    except (manifest.ManifestError, registry.RegistryError, cache.CacheError) as exc:
+        print(f"decision-swarm: error: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
