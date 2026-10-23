@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "models": [
+    {
+      "id": "laya-english",
+      "hf_repo": "convaiinnovations/laya",
+      "subfolder": null,
+      "revision": "main",
+      "modality": "text",
+      "package_source": "laya>=0.3.20",
+      "loader": "load",
+      "params": "421M",
+      "download_bytes": 842609210,
+      "license": "Apache-2.0",
+      "notes": "ModernBERT-large backbone, 512-token context. English text, guardrails, email triage. Checkpoint at the hub repo root; laya.load('convaiinnovations/laya')."
+    },
+    {
+      "id": "laya-multilingual",
+      "hf_repo": "convaiinnovations/laya",
+      "subfolder": "multilingual",
+      "revision": "main",
+      "modality": "text",
+      "package_source": "laya>=0.3.20",
+      "loader": "load",
+      "params": "322M",
+      "download_bytes": 643835514,
+      "license": "Apache-2.0",
+      "notes": "mmBERT-base backbone, 1024-token context (up to 8192 with max_len=8192). 100+ languages, ~2.2x faster than the English checkpoint. laya.load('convaiinnovations/laya', subfolder='multilingual')."
+    },
+    {
+      "id": "laya-typed-decisions",
+      "hf_repo": "convaiinnovations/laya",
+      "subfolder": "typed-decisions",
+      "revision": "main",
+      "modality": "text",
+      "package_source": "laya>=0.3.20",
+      "loader": "load",
+      "params": "421M",
+      "download_bytes": 842609220,
+      "license": "Apache-2.0",
+      "notes": "ModernBERT-large backbone, 1024-token context. Fine-tuned for the typed-decisions workflows (invoice processing, security incidents, customer service, agent-trace observability). laya.load('convaiinnovations/laya', subfolder='typed-decisions')."
+    },
+    {
+      "id": "laya-vision",
+      "hf_repo": "thaitea/laya-vision",
+      "subfolder": null,
+      "revision": "main",
+      "modality": "image+text",
+      "package_source": "git+https://github.com/r33drichards/laya-vision",
+      "loader": "load_vlm",
+      "params": "201M",
+      "download_bytes": 804000000,
+      "license": "weights: CC BY-NC-SA 4.0 / code: Apache-2.0",
+      "notes": "SmolVLM-256M backbone cut to 20 language layers, ~41 ms/image. download_bytes is an estimate (F32 weights); fetch records exact sizes in models.lock.json. The laya-vision fork installs its own 'laya' package (cannot coexist with PyPI laya) and needs torchvision and transformers>=5.3: use per-package envs."
+    },
+    {
+      "id": "laya-vision-237m",
+      "hf_repo": "thaitea/laya-vision-smolvlm-256m-score",
+      "subfolder": null,
+      "revision": "main",
+      "modality": "image+text",
+      "package_source": "git+https://github.com/r33drichards/laya-vision",
+      "loader": "load_vlm",
+      "params": "237M",
+      "download_bytes": 948000000,
+      "license": "weights: CC BY-NC-SA 4.0 / code: Apache-2.0",
+      "notes": "Previous laya-vision checkpoint (no game training), kept for comparison. Same runtime as laya-vision. download_bytes is an estimate (F32 weights)."
+    },
+    {
+      "id": "custom-hf-repo",
+      "custom": true,
+      "hf_repo": null,
+      "subfolder": null,
+      "revision": null,
+      "modality": null,
+      "package_source": null,
+      "loader": null,
+      "params": null,
+      "download_bytes": null,
+      "license": null,
+      "notes": "Free-form entry: any Hugging Face repo id. The user supplies the repo, modality, loader and package_source; license is unknown until the user declares it."
+    }
+  ]
+}

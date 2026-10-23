@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local tooling / editor config (machine-specific paths)
+.vscode/
+.opencode/
+.vexp/
+opencode.json
+
+# Decision Swarm local runtime artifacts
+.decision-swarm/
