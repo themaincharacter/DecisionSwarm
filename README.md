@@ -4,8 +4,9 @@ Assemble a **swarm of Laya decision-model sensors** over one observation, downlo
 required models once into a shared local cache, and package the configured swarm as a
 runnable artifact: an installable Python library and a bash-callable CLI.
 
-> **Status: Phase 0 — scaffold.** The package skeleton, CLI surface, model registry and CI
-> exist and install cleanly. Functionality lands per the [Roadmap](#roadmap).
+> **Status: Phases 0–3 done.** Core (manifest, registry, cache, packs), runtime
+> (workers, protocol, orchestrator) and the CLI + per-OS launcher builds are in place.
+> The GUI (Phase 4) is next. Functionality lands per the [Roadmap](#roadmap).
 
 ## Concept
 
@@ -46,8 +47,11 @@ decision-swarm install --pack ./my-swarm            # build per-package envs
 decision-swarm run     --pack ./my-swarm --input obs.json [--offline] [--json|--pretty]
 ```
 
-The command surface is defined now; the handlers land in Phases 1–3. Binaries are built
-per-OS with PyInstaller (small launchers; weights resolve from the shared cache).
+All four commands are implemented. `install` builds one venv per unique
+`package_source` (required in practice: the `laya-vision` fork cannot coexist with PyPI
+`laya`); `run` executes warm per-cell workers and prints the result schema (`--pretty` for
+humans, `--offline` to refuse uncached models). Binaries are built per-OS with PyInstaller
+via `decision-swarm.spec` (small ~20 MB launchers; weights resolve from the shared cache).
 
 ## Model registry
 
@@ -142,9 +146,9 @@ defaults so answers stay comparable across queries; each query may override them
 | Phase | Scope |
 |---|---|
 | **0 — Scaffold** | repo, package skeleton, CLI surface, registry, CI ✅ |
-| **1 — Core** | manifest schema + validation, registry access, cache manager (fetch / sha256 / dedup), pack builder |
-| **2 — Runtime** | worker process + stdio protocol, env isolation, parallel cell execution, result schema |
-| **3 — CLI + exes** | `run` / `fetch` / `install` / `inspect`, offline mode, PyInstaller per-OS builds |
+| **1 — Core** | manifest schema + validation, registry access, cache manager (fetch / sha256 / dedup), pack builder ✅ |
+| **2 — Runtime** | worker process + stdio protocol, env isolation, parallel cell execution, result schema ✅ |
+| **3 — CLI + exes** | `run` / `fetch` / `install` / `inspect`, offline mode, PyInstaller per-OS builds ✅ |
 | **4 — GUI** | Tauri app: cell grid, cluster panel, Download, Submit → pack |
 | Deferred | aggregation/consensus, npm adapter, Godot addon, swarm-as-HTTP-server |
 
