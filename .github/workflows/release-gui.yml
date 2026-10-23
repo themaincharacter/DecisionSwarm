@@ -124,9 +124,15 @@ jobs:
           New-Item -ItemType Directory -Force -Path $out | Out-Null
           @(
             "Decision Swarm $version - portable Windows app.",
+            "",
             "Unzip anywhere and run decision-swarm-gui.exe (keep decision-swarm.exe",
-            "beside it: that is the bundled engine). Needs Windows 10 1803+ with the",
-            "WebView2 runtime, which ships with Windows 11 and current Windows 10."
+            "beside it: that is the bundled engine).",
+            "",
+            "Needs the Microsoft Edge WebView2 runtime. Windows 11 and current",
+            "Windows 10 already have it. On older Windows 10, install it first:",
+            "download the free WebView2 Evergreen Bootstrapper (2 MB) from",
+            "https://developer.microsoft.com/microsoft-edge/webview2/",
+            "or directly: https://go.microsoft.com/fwlink/p/?LinkId=2124703"
           ) | Set-Content README.txt
           Compress-Archive -Force -Path src-tauri/target/release/decision-swarm-gui.exe, src-tauri/target/release/decision-swarm.exe, README.txt -DestinationPath "$out/Decision Swarm_${version}_${{ matrix.arch }}-portable.zip"
 

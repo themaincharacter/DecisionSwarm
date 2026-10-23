@@ -78,8 +78,10 @@ How it fits together:
 - Windows is portable by design: `tauri.windows.conf.json` sets
   `bundle.targets: []` (no `.msi`/NSIS), and the workflow zips
   `decision-swarm-gui.exe` + the engine sidecar. The app needs the WebView2
-  runtime (ships with Windows 11 and current Windows 10); to keep its own data
-  beside the exe see `app > appDirectoriesOverride` in the Tauri config.
+  runtime (ships with Windows 11 and current Windows 10; on older Windows 10
+  install the free "Evergreen Bootstrapper" from
+  https://developer.microsoft.com/microsoft-edge/webview2/); to keep its own
+  data beside the exe see `app > appDirectoriesOverride` in the Tauri config.
 
 Signing: unsigned bundles run, but trigger macOS Gatekeeper / Windows
 SmartScreen warnings. For signed and notarized macOS builds set the repository
