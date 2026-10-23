@@ -9,18 +9,86 @@
 
 use std::fs;
 use std::io::{BufRead, BufReader};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use tauri::Emitter;
 
-fn cli_program() -> String {
-    std::env::var("DECISION_SWARM_CLI").unwrap_or_else(|_| "decision-swarm".to_string())
+fn cli_names_in(dir: &Path) -> Vec<PathBuf> {
+    vec![dir.join("decision-swarm"), dir.join("decision-swarm.exe")]
+}
+
+fn dev_cli_candidates(root: &Path) -> Vec<PathBuf> {
+    vec![
+        root.join(".venv/bin/decision-swarm"),
+        root.join(".venv/Scripts/decision-swarm.exe"),
+        root.join("dist/decision-swarm"),
+        root.join("dist/decision-swarm.exe"),
+    ]
+}
+
+/// Walk up from `start` looking for a repo checkout with a built engine.
+fn find_dev_cli(start: &Path) -> Option<PathBuf> {
+    for ancestor in start.ancestors() {
+        for candidate in dev_cli_candidates(ancestor) {
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+fn find_on_path() -> Option<PathBuf> {
+    let paths = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&paths) {
+        for candidate in cli_names_in(&dir) {
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+/// Engine lookup: explicit override > launcher bundled beside the app >
+/// repo dev checkout (`npm run dev` / `cargo run`) > PATH.
+fn cli_program() -> Result<String, String> {
+    if let Ok(program) = std::env::var("DECISION_SWARM_CLI") {
+        return Ok(program);
+    }
+    if let Ok(executable) = std::env::current_exe() {
+        if let Some(dir) = executable.parent() {
+            for candidate in cli_names_in(dir) {
+                if candidate.is_file() {
+                    return Ok(candidate.display().to_string());
+                }
+            }
+        }
+        if let Some(found) = find_dev_cli(&executable) {
+            return Ok(found.display().to_string());
+        }
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        if let Some(found) = find_dev_cli(&cwd) {
+            return Ok(found.display().to_string());
+        }
+    }
+    if let Some(found) = find_on_path() {
+        return Ok(found.display().to_string());
+    }
+    Err(
+        "decision-swarm engine not found: install it on PATH, set DECISION_SWARM_CLI to the \
+         launcher, or run from a repo checkout with a .venv"
+            .to_string(),
+    )
 }
 
 fn run_cli(args: &[String]) -> Result<String, String> {
-    let output = Command::new(cli_program())
+    let program = cli_program()?;
+    let output = Command::new(&program)
         .args(args)
         .output()
-        .map_err(|error| format!("failed to run {}: {error}", cli_program()))?;
+        .map_err(|error| format!("failed to run {program}: {error}"))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(stderr.trim().to_string());
@@ -54,12 +122,13 @@ fn download_models(
         args.push("--models-dir".to_string());
         args.push(dir);
     }
-    let mut child = Command::new(cli_program())
+    let program = cli_program()?;
+    let mut child = Command::new(&program)
         .args(&args)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|error| format!("failed to run {}: {error}", cli_program()))?;
+        .map_err(|error| format!("failed to run {program}: {error}"))?;
     let stdout = child.stdout.take().ok_or_else(|| "no stdout".to_string())?;
     let mut collected = String::new();
     for line in BufReader::new(stdout).lines().map_while(Result::ok) {
@@ -107,4 +176,33 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Decision Swarm GUI");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn finds_the_repo_venv_cli_from_a_nested_debug_build() {
+        let root = std::env::temp_dir().join("decision-swarm-cli-test");
+        let _ = fs::remove_dir_all(&root);
+        let venv_bin = root.join(".venv").join("bin");
+        fs::create_dir_all(&venv_bin).unwrap();
+        let cli = venv_bin.join("decision-swarm");
+        fs::write(&cli, b"#!/bin/sh\n").unwrap();
+
+        let nested = root.join("gui/src-tauri/target/debug");
+        fs::create_dir_all(&nested).unwrap();
+        assert_eq!(find_dev_cli(&nested.join("decision-swarm-gui")), Some(cli));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn finds_nothing_without_an_engine() {
+        let root = std::env::temp_dir().join("decision-swarm-cli-test-empty");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        assert_eq!(find_dev_cli(&root), None);
+        let _ = fs::remove_dir_all(&root);
+    }
 }

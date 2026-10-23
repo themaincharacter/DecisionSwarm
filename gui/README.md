@@ -32,9 +32,12 @@ cd gui && npm install && npm run dev        # needs Rust + webkit2gtk (Linux)
 ```
 
 Linux build dependencies: `sudo apt install pkgconf libwebkit2gtk-4.1-dev
-build-essential libxdo-dev libssl-dev librsvg2-dev`. Point the shell at the
-engine with `DECISION_SWARM_CLI=/path/to/decision-swarm` (defaults to
-`decision-swarm` on PATH).
+build-essential libxdo-dev libssl-dev librsvg2-dev`.
+
+The shell finds the engine automatically: `DECISION_SWARM_CLI` if set, a
+launcher bundled beside the app, then a repo checkout's `.venv` (or `dist`)
+launcher found by walking up from the executable/cwd, then `decision-swarm` on
+PATH.
 
 ## Notes
 
