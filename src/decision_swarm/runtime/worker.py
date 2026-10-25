@@ -7,7 +7,9 @@ over pack defaults), and answers them with typed ``choice`` / ``score`` /
 ``package_source`` and speaks the JSON-lines stdio protocol.
 
 Launch: ``python -m decision_swarm.runtime.worker --config '<json>'`` where the
-config names the loader, the model spec, and the cell's bound view types.
+config names the loader, the model spec, and the cell's bound view types. Once
+the model is loaded the worker announces ``ready`` on stdout, then answers
+queries until shutdown or end-of-stream.
 """
 
 from __future__ import annotations
@@ -116,6 +118,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except loaders.LoaderError as exc:
         protocol.write(sys.stdout, protocol.ErrorMessage(message=str(exc)))
         return 1
+    protocol.write(sys.stdout, protocol.ReadyMessage())
     return run_session(predictor)
 
 

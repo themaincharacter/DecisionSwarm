@@ -159,6 +159,7 @@ def test_readme_mentions_cells_and_usage(
     assert "`screenshot_sensor`" in readme and "`dom_sensor`" in readme
     assert "pip install ./runtime" in readme
     assert "decision-swarm fetch --pack ." in readme
+    assert "long-lived" in readme and "serve" in readme
 
 
 def test_build_is_idempotent(tmp_path: Path, swarm: manifest_mod.SwarmManifest) -> None:

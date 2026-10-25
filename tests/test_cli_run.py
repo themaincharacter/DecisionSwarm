@@ -113,6 +113,8 @@ def test_cli_worker_hidden_route(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert cli.main(["_worker", "--config", config]) == 0
     stdout.seek(0)
+    ready = protocol.read(stdout)
+    assert isinstance(ready, protocol.ReadyMessage)
     response = protocol.read(stdout)
     assert isinstance(response, protocol.ResultMessage)
     assert response.id == 1

@@ -45,6 +45,11 @@ def test_error_and_shutdown_round_trip() -> None:
         assert protocol.decode(protocol.encode(message)) == message
 
 
+def test_ready_round_trip() -> None:
+    message = protocol.ReadyMessage()
+    assert protocol.decode(protocol.encode(message)) == message
+
+
 def test_stream_write_and_read() -> None:
     stream = io.StringIO()
     protocol.write(stream, protocol.QueryMessage(id=1, views={"dom": "<html>"}, questions={}))

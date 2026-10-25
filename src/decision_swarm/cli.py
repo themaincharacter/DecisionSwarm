@@ -1,8 +1,8 @@
 """``decision-swarm`` command-line entrypoint.
 
-The command surface is defined here (``inspect``, ``fetch``, ``install``,
-``run``); the handlers land in Phases 1-3. ``decision-swarm --help`` works
-today.
+The command surface is defined here: ``inspect``, ``fetch``, ``install``,
+``run`` (one observation), ``serve`` (long-lived decision service over stdio),
+``build``, and ``models``.
 """
 
 from __future__ import annotations
@@ -10,11 +10,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict
 
 from decision_swarm import __version__, cache, envs, manifest, pack, query, registry
-from decision_swarm.runtime import loaders, orchestrator, worker
+from decision_swarm.runtime import loaders, orchestrator, serve, worker
 
 
 def _add_pack_argument(parser: argparse.ArgumentParser) -> None:
@@ -101,25 +101,57 @@ def _print_pretty(result: query.SwarmResult) -> None:
             print(f"  warning: {warning}")
 
 
+def _require_cached(
+    swarm: manifest.SwarmManifest,
+    args: argparse.Namespace,
+    entries: Mapping[str, registry.ModelEntry],
+) -> None:
+    """Fail fast under ``--offline`` when a model is missing from the cache."""
+    if not args.offline:
+        return
+    missing = [
+        model.id
+        for model in pack.collect_models(swarm, models_root=args.models_dir, registry_entries=entries)
+        if not model.cached
+    ]
+    if missing:
+        raise cache.CacheError(f"--offline: model(s) not in the cache: {', '.join(missing)}")
+
+
 def _cmd_run(args: argparse.Namespace) -> int:
     """Run a pack against one observation."""
     swarm = manifest.load_manifest(args.pack)
     payload = query.load_query(args.input, swarm)
     entries = registry.load_registry()
-    if args.offline:
-        missing = [
-            model.id
-            for model in pack.collect_models(swarm, models_root=args.models_dir, registry_entries=entries)
-            if not model.cached
-        ]
-        if missing:
-            raise cache.CacheError(f"--offline: model(s) not in the cache: {', '.join(missing)}")
-    result = orchestrator.run(swarm, payload, registry_entries=entries, envs_root=args.envs_dir)
+    _require_cached(swarm, args, entries)
+    result = orchestrator.run(
+        swarm,
+        payload,
+        registry_entries=entries,
+        envs_root=args.envs_dir,
+        models_root=args.models_dir,
+    )
     if args.pretty:
         _print_pretty(result)
     else:
         print(json.dumps(result.to_dict(), indent=2))
     return 0
+
+
+def _cmd_serve(args: argparse.Namespace) -> int:
+    """Serve a pack as a long-lived decision service over stdio (JSONL)."""
+    swarm = manifest.load_manifest(args.pack)
+    entries = registry.load_registry()
+    _require_cached(swarm, args, entries)
+    plans = orchestrator.plan_cells(
+        swarm,
+        registry_entries=entries,
+        envs_root=args.envs_dir,
+        models_root=args.models_dir,
+    )
+    print(f"serving {swarm.name}: {len(swarm.cells)} cells over stdio", file=sys.stderr)
+    with orchestrator.Swarm(plans) as warm:
+        return serve.serve_loop(warm, swarm)
 
 
 def _cmd_build(args: argparse.Namespace) -> int:
@@ -218,6 +250,18 @@ def build_parser() -> argparse.ArgumentParser:
     output_group.add_argument("--json", action="store_true", help="print results as JSON (default)")
     output_group.add_argument("--pretty", action="store_true", help="print results in human-readable form")
     run_parser.set_defaults(handler=_cmd_run)
+
+    serve_parser = subparsers.add_parser(
+        "serve",
+        help="serve a pack as a long-lived decision service (JSONL over stdio)",
+    )
+    _add_pack_argument(serve_parser)
+    _add_models_dir_argument(serve_parser)
+    _add_envs_dir_argument(serve_parser)
+    serve_parser.add_argument(
+        "--offline", action="store_true", help="never touch the network; use the shared cache only"
+    )
+    serve_parser.set_defaults(handler=_cmd_serve)
 
     build_parser = subparsers.add_parser("build", help="build a swarm pack from a manifest")
     build_parser.add_argument("--manifest", required=True, metavar="FILE", help="path to swarm.json")

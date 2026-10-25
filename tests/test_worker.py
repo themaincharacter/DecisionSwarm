@@ -81,6 +81,9 @@ def test_worker_session_end_to_end() -> None:
     process = _spawn(_config())
     assert process.stdin is not None and process.stdout is not None
 
+    ready = protocol.read(process.stdout)
+    assert isinstance(ready, protocol.ReadyMessage)
+
     protocol.write(
         process.stdin,
         protocol.QueryMessage(
@@ -105,6 +108,8 @@ def test_worker_session_end_to_end() -> None:
 def test_worker_survives_bad_lines() -> None:
     process = _spawn(_config())
     assert process.stdin is not None and process.stdout is not None
+
+    assert isinstance(protocol.read(process.stdout), protocol.ReadyMessage)
 
     process.stdin.write("{broken\n")
     process.stdin.flush()

@@ -20,6 +20,7 @@ EXPECTED_MODULES = [
     "decision_swarm.runtime.protocol",
     "decision_swarm.runtime.worker",
     "decision_swarm.runtime.orchestrator",
+    "decision_swarm.runtime.serve",
 ]
 
 

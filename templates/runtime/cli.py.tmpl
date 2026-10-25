@@ -3,10 +3,40 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from collections.abc import Sequence
 
+from decision_swarm import cache, envs, query, registry
+from decision_swarm.manifest import ManifestError
+from decision_swarm.runtime.loaders import LoaderError
+from decision_swarm.runtime.orchestrator import OrchestratorError, Swarm, plan_cells, run as run_swarm
+from decision_swarm.runtime.serve import serve_loop
+
 from {{PACK_MODULE}} import load_manifest
+
+EXPECTED_ERRORS = (
+    ManifestError,
+    query.QueryError,
+    registry.RegistryError,
+    cache.CacheError,
+    envs.EnvError,
+    LoaderError,
+    OrchestratorError,
+)
+
+
+def _add_cache_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--models-dir",
+        metavar="DIR",
+        help="model cache location (default: ~/.decision-swarm/models, or $DECISION_SWARM_MODELS)",
+    )
+    parser.add_argument(
+        "--envs-dir",
+        metavar="DIR",
+        help="env location (default: ~/.decision-swarm/envs, or $DECISION_SWARM_ENVS)",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -18,18 +48,47 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("inspect", help="list this pack's cells")
     run_parser = subparsers.add_parser("run", help="run the pack against an observation")
     run_parser.add_argument("--input", required=True, metavar="FILE", help="observation payload (JSON)")
+    _add_cache_arguments(run_parser)
+    serve_parser = subparsers.add_parser(
+        "serve", help="long-lived decision service: JSONL queries over stdio"
+    )
+    _add_cache_arguments(serve_parser)
     return parser
+
+
+def _cmd_run(args: argparse.Namespace) -> int:
+    manifest = load_manifest()
+    payload = query.load_query(args.input, manifest)
+    result = run_swarm(manifest, payload, models_root=args.models_dir, envs_root=args.envs_dir)
+    print(json.dumps(result.to_dict(), indent=2))
+    return 0
+
+
+def _cmd_serve(args: argparse.Namespace) -> int:
+    manifest = load_manifest()
+    plans = plan_cells(manifest, models_root=args.models_dir, envs_root=args.envs_dir)
+    with Swarm(plans) as warm:
+        return serve_loop(warm, manifest)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    try:
+        return _dispatch(args)
+    except EXPECTED_ERRORS as exc:
+        print("{{PACK_SLUG}}: error: " + str(exc), file=sys.stderr)
+        return 1
+
+
+def _dispatch(args: argparse.Namespace) -> int:
     manifest = load_manifest()
     if args.command == "inspect":
         for cell in manifest.cells:
             print(f"{cell.id}: {cell.model} [{', '.join(cell.views)}]")
         return 0
-    print("{{PACK_SLUG}}: 'run' is not implemented yet", file=sys.stderr)
-    return 2
+    if args.command == "run":
+        return _cmd_run(args)
+    return _cmd_serve(args)
 
 
 if __name__ == "__main__":

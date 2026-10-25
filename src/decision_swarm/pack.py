@@ -138,6 +138,13 @@ def collect_models(
     return models
 
 
+SERVE_EXAMPLE_READY = '{"type": "ready", "name": "<pack>", "cells": [...], "views": [...], "warnings": []}'
+SERVE_EXAMPLE_QUERY = '{"type": "query", "id": 1, "views": {...}, "questions": {...}}'
+SERVE_EXAMPLE_RESULT = '{"type": "result", "id": 1, "cells": {...}}'
+SERVE_EXAMPLE_ERROR = '{"type": "error", "id": 1, "message": "..."}'
+SERVE_EXAMPLE_SHUTDOWN = '{"type": "shutdown"}'
+
+
 def _pack_readme(manifest: SwarmManifest, models: list[PackModel], slug: str) -> str:
     lines = [
         f"# {manifest.name} (swarm pack)",
@@ -167,8 +174,28 @@ def _pack_readme(manifest: SwarmManifest, models: list[PackModel], slug: str) ->
         "```bash",
         f"pip install ./runtime        # installs the {slug} runtime package",
         f"{slug} inspect              # list the pack's cells",
-        f"{slug} run --input obs.json  # run the swarm",
+        f"{slug} run --input obs.json  # one-shot: answer one observation, then exit",
+        f"{slug} serve                 # long-lived: warm decision service over stdio",
         "```",
+        "",
+        "### Long-lived decisions (`serve`)",
+        "",
+        "`serve` loads every model once, then answers query after query at model",
+        "latency — no model reload per decision. One JSON object per line on stdio:",
+        "",
+        "```jsonl",
+        SERVE_EXAMPLE_READY,
+        SERVE_EXAMPLE_QUERY,
+        SERVE_EXAMPLE_RESULT,
+        SERVE_EXAMPLE_ERROR,
+        SERVE_EXAMPLE_SHUTDOWN,
+        "```",
+        "",
+        "`ready` arrives once every model is loaded. A `query` line is exactly the",
+        "`run --input` payload plus `type` and `id` (`id` is echoed back and may be",
+        "omitted), and `result` carries the same `cells` object as `run`'s JSON",
+        "output. Per-query failures come back as `error` lines without ending the",
+        "session; `shutdown` (or closing stdin) exits cleanly.",
         "",
         "Model weights resolve from the shared cache (`~/.decision-swarm/models` by",
         "default); populate it first with `decision-swarm fetch --pack .`.",

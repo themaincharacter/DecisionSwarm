@@ -44,6 +44,7 @@ class CellPlan:
     loader: str
     package_source: str | None
     python: Path
+    models_dir: Path
     view_types: Mapping[str, str]
     warnings: tuple[str, ...] = ()
 
@@ -53,6 +54,7 @@ def plan_cells(
     *,
     registry_entries: Mapping[str, registry.ModelEntry] | None = None,
     envs_root: str | Path | None = None,
+    models_root: str | Path | None = None,
     interpreter: str | Path | None = None,
 ) -> list[CellPlan]:
     """Resolve each cell to a runnable plan (model, loader, interpreter, view types).
@@ -68,6 +70,7 @@ def plan_cells(
                 env_by_cell[cell_id] = env
 
     known_views = {view.name: view.type for view in swarm.views}
+    models_dir = cache.models_dir(models_root)
     plans: list[CellPlan] = []
     for cell in swarm.cells:
         entry = registry.resolve_model(cell.model, registry_entries)
@@ -94,6 +97,7 @@ def plan_cells(
                 loader=loader,
                 package_source=package_source,
                 python=python,
+                models_dir=models_dir,
                 view_types={name: known_views[name] for name in cell.views},
                 warnings=tuple(warnings),
             )
@@ -126,8 +130,14 @@ def _child_env() -> dict[str, str]:
 class WorkerHandle:
     """One warm worker subprocess speaking the stdio protocol."""
 
-    def __init__(self, plan: CellPlan, process: subprocess.Popen[str]) -> None:
+    def __init__(
+        self,
+        plan: CellPlan,
+        process: subprocess.Popen[str],
+        startup_error: str | None = None,
+    ) -> None:
         self.plan = plan
+        self.startup_error = startup_error
         self._process = process
 
     @classmethod
@@ -139,7 +149,7 @@ class WorkerHandle:
                 "hf_repo": plan.model.hf_repo,
                 "subfolder": plan.model.subfolder,
                 "revision": plan.model.revision,
-                "models_dir": str(cache.models_dir()),
+                "models_dir": str(plan.models_dir),
             },
             "view_types": dict(plan.view_types),
         }
@@ -160,11 +170,36 @@ class WorkerHandle:
             command,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            # inherit stderr: diagnostics stay visible, and a chatty loader
+            # (progress bars, warnings) can never fill a pipe nobody reads
+            stderr=None,
             text=True,
             env=_child_env(),
         )
         return cls(plan, process)
+
+    def wait_ready(self) -> str | None:
+        """Block until the worker reports its model is loaded.
+
+        Returns an error message when the worker cannot become ready (it died,
+        or spoke out of turn); ``None`` means it is warm.
+        """
+        if self._process.stdout is None:  # pragma: no cover - defensive
+            return "worker stdout is closed"
+        error: str | None = None
+        while True:
+            try:
+                message = protocol.read(self._process.stdout)
+            except protocol.ProtocolError as exc:
+                return error or f"worker spoke out of turn ({exc})"
+            if isinstance(message, protocol.ReadyMessage):
+                return error
+            if message is None:
+                return error or "worker ended before its model was loaded"
+            if isinstance(message, protocol.ErrorMessage):
+                error = error or message.message or "worker failed to start"
+            else:
+                error = error or f"unexpected {type(message).__name__} before ready"
 
     def send(self, message: protocol.QueryMessage) -> protocol.ErrorMessage | None:
         """Write one query; return an error message when the worker cannot take it."""
@@ -196,7 +231,10 @@ class WorkerHandle:
         finally:
             for stream in (self._process.stdin, self._process.stdout, self._process.stderr):
                 if stream is not None:
-                    stream.close()
+                    try:
+                        stream.close()
+                    except (BrokenPipeError, OSError):
+                        pass  # the worker is gone; its pipe is already broken
 
 
 def _answers(questions: Mapping[str, QuestionSpec], wire: Mapping[str, Any]) -> dict[str, Answer]:
@@ -224,7 +262,22 @@ class Swarm:
     def start(self) -> "Swarm":
         for plan in self._plans:
             self._workers[plan.cell.id] = WorkerHandle.spawn(plan)
+        # workers load their models in parallel; each announces when it is warm
+        for worker in self._workers.values():
+            error = worker.wait_ready()
+            if error is not None:
+                worker.startup_error = error
         return self
+
+    def startup_warnings(self) -> tuple[str, ...]:
+        """Setup and worker-startup problems (for service-level notices)."""
+        warnings: list[str] = []
+        for plan in self._plans:
+            warnings.extend(plan.warnings)
+            worker = self._workers.get(plan.cell.id)
+            if worker is not None and worker.startup_error is not None:
+                warnings.append(f"cell {plan.cell.id!r}: worker error: {worker.startup_error}")
+        return tuple(warnings)
 
     def query(self, payload: QueryPayload) -> SwarmResult:
         """Fan one query out to every worker and collect raw per-cell answers."""
@@ -246,18 +299,27 @@ class Swarm:
 
         cells: dict[str, CellResult] = {}
         for cell_id, (plan, questions, message) in requests.items():
+            worker = self._workers[cell_id]
             if cell_id in errors:
                 response: protocol.Message = errors[cell_id]
             else:
-                response = self._workers[cell_id].receive()
-            cells[cell_id] = self._result_for(plan, questions, response)
+                response = worker.receive()
+            cells[cell_id] = self._result_for(
+                plan, questions, response, startup_error=worker.startup_error
+            )
         return SwarmResult(cells=cells)
 
     @staticmethod
     def _result_for(
-        plan: CellPlan, questions: Mapping[str, QuestionSpec], response: protocol.Message
+        plan: CellPlan,
+        questions: Mapping[str, QuestionSpec],
+        response: protocol.Message,
+        *,
+        startup_error: str | None = None,
     ) -> CellResult:
         setup_warnings = list(plan.warnings)
+        if startup_error is not None:
+            setup_warnings.append(f"worker error: {startup_error}")
         if isinstance(response, protocol.ResultMessage):
             return CellResult(
                 cell_id=plan.cell.id,
@@ -293,11 +355,16 @@ def run(
     *,
     registry_entries: Mapping[str, registry.ModelEntry] | None = None,
     envs_root: str | Path | None = None,
+    models_root: str | Path | None = None,
     interpreter: str | Path | None = None,
 ) -> SwarmResult:
     """Plan the cells, run one query across warm workers, and return the result schema."""
     plans = plan_cells(
-        swarm, registry_entries=registry_entries, envs_root=envs_root, interpreter=interpreter
+        swarm,
+        registry_entries=registry_entries,
+        envs_root=envs_root,
+        models_root=models_root,
+        interpreter=interpreter,
     )
     with Swarm(plans) as warm:
         return warm.query(payload)

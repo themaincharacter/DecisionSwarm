@@ -6,6 +6,7 @@ One JSON object per line, newline-framed:
 - response: ``{"type": "result", "id": 1, "answers": {...}, "latency_ms": 41.0,
   "warnings": [...]}``
 - failure:  ``{"type": "error", "id": 1, "message": "..."}``
+- warm-up:   ``{"type": "ready"}`` (worker has loaded its model)
 - control:  ``{"type": "shutdown"}``
 
 Only the views a cell is bound to travel in its request; answers on the wire
@@ -61,11 +62,16 @@ class ErrorMessage:
 
 
 @dataclass(frozen=True)
+class ReadyMessage:
+    """The worker has loaded its model and can answer queries."""
+
+
+@dataclass(frozen=True)
 class ShutdownMessage:
     """End the worker session."""
 
 
-Message = QueryMessage | ResultMessage | ErrorMessage | ShutdownMessage
+Message = QueryMessage | ResultMessage | ErrorMessage | ReadyMessage | ShutdownMessage
 
 
 def encode(message: Message) -> str:
@@ -87,6 +93,8 @@ def encode(message: Message) -> str:
         }
     elif isinstance(message, ErrorMessage):
         payload = {"type": "error", "id": message.id, "message": message.message}
+    elif isinstance(message, ReadyMessage):
+        payload = {"type": "ready"}
     elif isinstance(message, ShutdownMessage):
         payload = {"type": "shutdown"}
     else:  # pragma: no cover - exhaustive union
@@ -135,6 +143,8 @@ def decode(line: str) -> Message:
         )
     if kind == "error":
         return ErrorMessage(id=payload.get("id"), message=str(payload.get("message", "")))
+    if kind == "ready":
+        return ReadyMessage()
     if kind == "shutdown":
         return ShutdownMessage()
     raise ProtocolError(f"unknown message type {kind!r}")
