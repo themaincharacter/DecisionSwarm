@@ -2,11 +2,13 @@
 
 Assemble a **swarm of Laya decision-model sensors** over one observation, download the
 required models once into a shared local cache, and package the configured swarm as a
-runnable artifact: an installable Python library and a bash-callable CLI.
+runnable artifact: an installable Python library, a bash-callable CLI, and a long-lived
+decision service a real-time consumer can query at model latency.
 
-> **Status: Phases 0–4 done.** Core (manifest, registry, cache, packs), runtime
-> (workers, protocol, orchestrator), the CLI + per-OS launcher builds, and the
-> desktop GUI are in place. Functionality lands per the [Roadmap](#roadmap).
+> **Status: Phases 0–5 done.** Core (manifest, registry, cache, packs), runtime
+> (workers, protocol, orchestrator, the warm `serve` service), the CLI + per-OS
+> launcher builds, and the desktop GUI are in place. Functionality lands per the
+> [Roadmap](#roadmap).
 
 ## Concept
 
@@ -16,6 +18,7 @@ runnable artifact: an installable Python library and a bash-callable CLI.
 | **Cell** | One sensor: a model + bindings to named views + a question set. |
 | **Swarm** | 2–8 cells observing the same observation. |
 | **Pack** | The build artifact: `swarm.json` + `models.lock.json` + generated `runtime/` + README. |
+| **Serve** | A pack running as a long-lived process: the swarm stays warm and answers JSONL queries over stdio. |
 
 Each cell answers typed questions — `choice`, `score`, or `noul` (yes/no probability) —
 over the views it is bound to, in a single forward pass with calibrated probabilities.
@@ -54,13 +57,41 @@ decision-swarm inspect --pack ./my-swarm            # cells, models, sizes, cach
 decision-swarm fetch   --pack ./my-swarm            # pre-download models to the shared cache
 decision-swarm install --pack ./my-swarm            # build per-package envs
 decision-swarm run     --pack ./my-swarm --input obs.json [--offline] [--json|--pretty]
+decision-swarm serve   --pack ./my-swarm [--offline]  # long-lived: JSONL queries over stdio
 ```
 
-All four commands are implemented. `install` builds one venv per unique
-`package_source` (required in practice: the `laya-vision` fork cannot coexist with PyPI
-`laya`); `run` executes warm per-cell workers and prints the result schema (`--pretty` for
-humans, `--offline` to refuse uncached models). Binaries are built per-OS with PyInstaller
-via `decision-swarm.spec` (small ~20 MB launchers; weights resolve from the shared cache).
+All commands are implemented. `install` builds one venv per unique `package_source`
+(required in practice: the `laya-vision` fork cannot coexist with PyPI `laya`); `run`
+executes warm per-cell workers for one observation and prints the result schema
+(`--pretty` for humans, `--offline` to refuse uncached models); `serve` keeps the same
+workers warm and answers query after query — see
+[Long-lived decisions](#long-lived-decisions-serve). Binaries are built per-OS with
+PyInstaller via `decision-swarm.spec` (small ~20 MB launchers; weights resolve from the
+shared cache).
+
+### Long-lived decisions (`serve`)
+
+`run` spawns workers and loads weights per invocation, which is right for one-shot
+answers but wrong for a real-time consumer (a game loop deciding several times per
+second). `serve` loads every model once and then answers queries at model latency,
+speaking one JSON object per line on stdio:
+
+```jsonl
+{"type": "ready", "name": "browser-swarm", "cells": [...], "views": [...], "warnings": []}
+{"type": "query", "id": 1, "views": {"dom": "<html>..."}, "questions": {...}}
+{"type": "result", "id": 1, "cells": {...}}
+{"type": "shutdown"}
+```
+
+`ready` is emitted only after every cell's model is loaded (workers load in parallel),
+so a consumer can wait for it instead of paying load on its first decision. A `query`
+line is exactly the payload `run --input` accepts, plus `type` and `id` (`id` is echoed
+back and may be omitted); `result.cells` is the same object `run` prints. Malformed
+lines and per-query failures come back as `error` lines without ending the session, and
+a cell that failed to start degrades to warnings on its results rather than taking the
+service down. A built pack's generated runtime exposes the same loop as
+`<pack-slug> serve`; the design is recorded in
+[ADR 0001](docs/adr/0001-serve-jsonl-stdio.md).
 
 ## Desktop GUI
 
@@ -69,9 +100,9 @@ via `decision-swarm.spec` (small ~20 MB launchers; weights resolve from the shar
 --manifest`), so GUI and CLI produce identical packs. Define observation views and 2–8
 cells (models with per-model licenses, view bindings, typed `choice`/`score`/`noul`
 questions), watch the live cluster panel (checkpoints, params, disk/RAM estimates,
-workers), Download the models, and Submit — then run the pack from the CLI. The UI also
-runs in a plain browser against a mock bridge; see `gui/README.md` for dev setup and
-Linux build dependencies.
+workers), Download the models, and Submit — then run or serve the pack from the CLI.
+The UI also runs in a plain browser against a mock bridge; see `gui/README.md` for dev
+setup and Linux build dependencies.
 
 ## Model registry
 
@@ -102,11 +133,12 @@ src/decision_swarm/
 ├── runtime/
 │   ├── orchestrator.py         # spawns cell workers, collects results
 │   ├── worker.py               # per-cell process: load model once, answer queries
+│   ├── serve.py                # long-lived JSONL decision service over stdio
 │   └── protocol.py             # stdio JSON protocol
 ├── pack.py                     # pack builder (what Submit emits)
 ├── envs.py                     # per-package venv builder/installer
 └── cli.py                      # decision-swarm entrypoint
-templates/runtime/              # generated pack runtime + CLI stub
+templates/runtime/              # generated pack runtime + CLI (inspect/run/serve)
 tests/                          # pytest suite (CI runs this)
 ```
 
@@ -156,7 +188,11 @@ defaults so answers stay comparable across queries; each query may override them
 ## Runtime notes
 
 - **One worker process per cell** — a small JSON protocol over stdio; each worker loads its
-  model once and stays warm. Each worker receives only its bound views + resolved questions.
+  model once and stays warm. Each worker receives only its bound views + resolved questions,
+  and announces `ready` once its model is loaded, so a swarm start means a warm swarm.
+- **Long-lived service** — `serve` reuses those warm workers, so repeated decisions cost a
+  forward pass per cell (tens of ms) instead of a model load; the service survives bad
+  frames and failed cells.
 - **Env isolation** — one venv per unique `package_source`. Required in practice: the
   `laya-vision` fork installs its own `laya` package and cannot coexist with PyPI `laya`,
   and it needs `transformers >= 5.3` while PyPI `laya` pins its own stack.
@@ -170,7 +206,8 @@ defaults so answers stay comparable across queries; each query may override them
 | **2 — Runtime** | worker process + stdio protocol, env isolation, parallel cell execution, result schema ✅ |
 | **3 — CLI + exes** | `run` / `fetch` / `install` / `inspect`, offline mode, PyInstaller per-OS builds ✅ |
 | **4 — GUI** | Tauri app: cell grid, cluster panel, Download, Submit → pack ✅ |
-| Deferred | aggregation/consensus, npm adapter, Godot addon, swarm-as-HTTP-server |
+| **5 — Serve** | long-lived JSONL decision service (`serve`) for real-time consumers ✅ |
+| Deferred | aggregation/consensus, npm adapter, Godot addon, HTTP transport (stdio `serve` is done) |
 
 ## Licensing
 
