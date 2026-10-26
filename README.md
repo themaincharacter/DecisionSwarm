@@ -24,6 +24,10 @@ Each cell answers typed questions — `choice`, `score`, or `noul` (yes/no proba
 over the views it is bound to, in a single forward pass with calibrated probabilities.
 **v1 returns raw per-cell answers;** aggregation/consensus is deliberately deferred.
 
+See [`docs/architecture.md`](docs/architecture.md) for the process topology, the build
+and serve flows, and which layer owns which decision, and [`GLOSSARY.md`](GLOSSARY.md)
+for the canonical vocabulary.
+
 ### Example: browser control
 
 | Cell | Model | Views | Question |
