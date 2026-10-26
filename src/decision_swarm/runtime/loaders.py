@@ -14,13 +14,16 @@ are wire dicts (``{question: {"<type>": value, "confidence": ...}}``).
 - ``stub``: deterministic offline predictor for tests and demos; echoes the
   view names it received in a warning so view isolation is observable.
 
-Each loader runs inside the env built for its cell's ``package_source``.
+Each loader runs inside the env built for its cell's ``package_source``. Both
+real loaders prefer a checkpoint already present in the shared model cache over
+the Hub repo id, so ``fetch`` (and ``--offline``) actually control what is loaded.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
 
 from decision_swarm.manifest import QuestionSpec, question_to_dict
@@ -43,6 +46,21 @@ class ModelSpec:
     @property
     def repo_id(self) -> str:
         return self.hf_repo or self.model_id
+
+    @property
+    def local_path(self) -> Path | None:
+        """The cached snapshot directory, when the checkpoint is really there.
+
+        Mirrors the cache layout (``<models-dir>/<repo>/<revision>/`` plus the
+        optional subfolder) and requires a ``config.json`` so a half-downloaded
+        directory falls back to the Hub instead of failing to load.
+        """
+        if not (self.models_dir and self.hf_repo and self.revision):
+            return None
+        snapshot = Path(self.models_dir) / self.hf_repo / self.revision
+        target = snapshot / self.subfolder if self.subfolder else snapshot
+        return target if (target / "config.json").is_file() else None
+
 
 
 class Predictor(Protocol):
@@ -120,6 +138,10 @@ def load_laya(spec: ModelSpec, view_types: Mapping[str, str]) -> Predictor:
     """PyPI ``laya`` single-model loader (``laya.load``)."""
     import laya  # provided by this cell's env (package_source)
 
+    local = spec.local_path
+    if local is not None:
+        # the subfolder is already part of the resolved path
+        return _TextPredictor(laya.load(str(local)))
     kwargs = {"subfolder": spec.subfolder} if spec.subfolder else {}
     return _TextPredictor(laya.load(spec.repo_id, **kwargs))
 
@@ -128,6 +150,9 @@ def load_laya_vlm(spec: ModelSpec, view_types: Mapping[str, str]) -> Predictor:
     """``laya-vision`` fork loader (``laya.load_vlm``)."""
     import laya  # the fork's package, in this cell's env
 
+    local = spec.local_path
+    if local is not None:
+        return _VisionPredictor(laya.load_vlm(str(local)), view_types)
     return _VisionPredictor(laya.load_vlm(spec.repo_id, revision=spec.revision), view_types)
 
 

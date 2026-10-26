@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -134,3 +135,96 @@ def test_worker_reports_config_errors_and_exits_nonzero() -> None:
     assert isinstance(message, protocol.ErrorMessage)
     assert "unknown loader" in message.message
     assert process.wait(timeout=10) == 1
+
+
+class _FakeLaya:
+    """Stands in for the ``laya`` package so loaders can be tested without torch."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
+    def load(self, target: str, **kwargs: object) -> object:
+        self.calls.append((target, kwargs))
+        return object()
+
+    def load_vlm(self, target: str, **kwargs: object) -> object:
+        self.calls.append((target, kwargs))
+        return object()
+
+
+def _cached_snapshot(root: Path, subfolder: str | None = None) -> Path:
+    """A cache snapshot with a root checkpoint and, optionally, one subfolder."""
+    snapshot = root / "convaiinnovations" / "laya" / "main"
+    snapshot.mkdir(parents=True, exist_ok=True)
+    (snapshot / "config.json").write_text("{}", encoding="utf-8")
+    if subfolder:
+        target = snapshot / subfolder
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "config.json").write_text("{}", encoding="utf-8")
+    return snapshot
+
+
+def test_model_spec_resolves_the_cached_snapshot(tmp_path: Path) -> None:
+    snapshot = _cached_snapshot(tmp_path, "typed-decisions")
+
+    root = loaders.ModelSpec(
+        model_id="laya-english", hf_repo="convaiinnovations/laya", models_dir=str(tmp_path)
+    )
+    sub = loaders.ModelSpec(
+        model_id="laya-typed-decisions",
+        hf_repo="convaiinnovations/laya",
+        subfolder="typed-decisions",
+        models_dir=str(tmp_path),
+    )
+
+    assert root.local_path == snapshot
+    assert sub.local_path == snapshot / "typed-decisions"
+
+
+def test_model_spec_ignores_an_incomplete_snapshot(tmp_path: Path) -> None:
+    (tmp_path / "convaiinnovations" / "laya" / "main").mkdir(parents=True)
+    spec = loaders.ModelSpec(
+        model_id="laya-english", hf_repo="convaiinnovations/laya", models_dir=str(tmp_path)
+    )
+    assert spec.local_path is None  # no config.json -> not a usable checkpoint
+
+
+def test_model_spec_has_no_local_path_without_a_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    spec = loaders.ModelSpec(model_id="convaiinnovations/laya")
+    assert spec.local_path is None
+
+
+def test_loaders_prefer_the_cached_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    snapshot = _cached_snapshot(tmp_path)
+    fake = _FakeLaya()
+    monkeypatch.setitem(sys.modules, "laya", fake)
+    spec = loaders.ModelSpec(
+        model_id="laya-english", hf_repo="convaiinnovations/laya", models_dir=str(tmp_path)
+    )
+
+    loaders.load_laya(spec, {})
+    loaders.load_laya_vlm(spec, {})
+
+    assert fake.calls == [(str(snapshot), {}), (str(snapshot), {})]
+
+
+def test_loaders_fall_back_to_the_hub_when_uncached(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = _FakeLaya()
+    monkeypatch.setitem(sys.modules, "laya", fake)
+    spec = loaders.ModelSpec(
+        model_id="convaiinnovations/laya", subfolder="typed-decisions", models_dir=str(tmp_path)
+    )
+
+    loaders.load_laya(spec, {})
+    loaders.load_laya_vlm(spec, {})
+
+    assert fake.calls == [
+        ("convaiinnovations/laya", {"subfolder": "typed-decisions"}),
+        ("convaiinnovations/laya", {"revision": "main"}),
+    ]
