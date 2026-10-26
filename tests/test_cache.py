@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -119,3 +120,13 @@ def test_status_reports_cache_state_and_bytes(tmp_path: Path) -> None:
 def test_entries_without_repo_or_revision_are_rejected(tmp_path: Path) -> None:
     with pytest.raises(cache.CacheError, match="hf_repo/revision"):
         cache.fetch(ModelEntry(id="orphan"), root=tmp_path, downloader=FakeDownloader())
+
+
+def test_hub_download_reports_a_missing_downloader(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A launcher or venv built without huggingface_hub must fail with an
+    # actionable CacheError, not a bare ModuleNotFoundError traceback.
+    monkeypatch.setitem(sys.modules, "huggingface_hub", None)
+    with pytest.raises(cache.CacheError, match="huggingface_hub"):
+        cache.hub_download("convaiinnovations/laya", "main", tmp_path, None)

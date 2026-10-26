@@ -49,7 +49,9 @@ needs no Python and no git checkout.
 
 ```bash
 # 1. build the engine launcher (repo root)
-python -m pip install pyinstaller
+#    `-e .` matters: it installs huggingface_hub, which the frozen launcher
+#    needs for `fetch` (the GUI's Download button).
+python -m pip install pyinstaller -e .
 python -m pyinstaller --clean --noconfirm decision-swarm.spec
 
 # 2. bundle (gui/)

@@ -74,7 +74,8 @@ executes warm per-cell workers for one observation and prints the result schema
 (`--pretty` for humans, `--offline` to refuse uncached models); `serve` keeps the same
 workers warm and answers query after query — see
 [Long-lived decisions](#long-lived-decisions-serve). Binaries are built per-OS with
-PyInstaller via `decision-swarm.spec` (small ~20 MB launchers; weights resolve from the
+PyInstaller via `decision-swarm.spec` (small ~25 MB launchers, downloader included;
+weights resolve from the
 shared cache).
 
 **Packs are descriptions; bundles are distributions.** A pack directory is small and

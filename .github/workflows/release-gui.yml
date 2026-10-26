@@ -43,10 +43,15 @@ jobs:
         with:
           python-version: "3.12"
 
+      # The launcher ships the model downloader, so the build environment needs
+      # the project's runtime dependencies, not just pyinstaller: a launcher
+      # frozen without huggingface_hub dies with ModuleNotFoundError on the
+      # first `fetch` (the GUI's Download button).
+      - name: Install the engine
+        run: python -m pip install pyinstaller -e .
+
       - name: Build the engine launcher
-        run: |
-          python -m pip install pyinstaller
-          pyinstaller --clean --noconfirm decision-swarm.spec
+        run: pyinstaller --clean --noconfirm decision-swarm.spec
 
       - name: Smoke test the launcher
         shell: bash
@@ -55,6 +60,8 @@ jobs:
           if [ -f "$bin.exe" ]; then bin="$bin.exe"; fi
           "$bin" --version
           "$bin" models --json > /dev/null
+          # `fetch` must be able to import the downloader inside the frozen app.
+          grep -q "huggingface_hub" build/decision-swarm/PYZ-00.toc
 
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'

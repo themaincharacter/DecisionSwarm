@@ -55,7 +55,7 @@ if (!source) {
     [
       "sidecar: decision-swarm engine launcher not found.",
       "Build it first, from the repository root:",
-      "  python -m pip install pyinstaller",
+      "  python -m pip install pyinstaller -e .",
       "  python -m pyinstaller --clean --noconfirm decision-swarm.spec",
       "or point DECISION_SWARM_SIDECAR at an existing launcher.",
     ].join("\n")

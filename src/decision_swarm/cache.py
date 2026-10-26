@@ -179,7 +179,17 @@ def verify(entry: ModelEntry, root: str | Path | None = None) -> bool:
 
 def hub_download(repo_id: str, revision: str, target: Path, subfolder: str | None) -> None:
     """Default downloader: ``huggingface_hub.snapshot_download`` into ``target``."""
-    from huggingface_hub import snapshot_download
+    try:
+        from huggingface_hub import snapshot_download
+    except ImportError as exc:
+        # The import is lazy, so an environment (or a frozen launcher) built
+        # without the downloader only discovers it here: turn the bare
+        # ModuleNotFoundError traceback into an actionable message.
+        raise CacheError(
+            "downloading models needs huggingface_hub, which this interpreter cannot import "
+            f"({exc}); install it with 'python -m pip install huggingface_hub', or use a "
+            "decision-swarm build that bundles it"
+        ) from exc
 
     snapshot_download(
         repo_id=repo_id,

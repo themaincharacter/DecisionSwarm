@@ -104,3 +104,15 @@ def test_models_dir_and_envs_dir_defaults_are_under_home(
 
     assert cache.models_dir() == tmp_path / cache.DEFAULT_MODELS_DIR_NAME
     assert envs.envs_dir() == tmp_path / envs.ENVS_DIR_NAME
+
+
+def test_launcher_spec_bundles_the_model_downloader() -> None:
+    # ``fetch`` runs inside the frozen launcher and imports huggingface_hub
+    # lazily, so static analysis only sees it when the spec collects it
+    # explicitly. Without this a release build ships a launcher whose Download
+    # button dies with ModuleNotFoundError.
+    spec = (Path(__file__).resolve().parents[1] / "decision-swarm.spec").read_text(
+        encoding="utf-8"
+    )
+    assert '"huggingface_hub"' in spec
+    assert "collect_all" in spec

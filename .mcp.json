@@ -1,0 +1,17 @@
+{
+	"mcpServers": {
+		"vexp": {
+			"type": "stdio",
+			"command": "/home/kickapookid/.vscode-server/bin/e646868227c3e3a9e3f24277c8c7220be42c0be7/node",
+			"args": [
+				"/home/kickapookid/.vscode-server/extensions/vexp.vexp-vscode-3.3.8-linux-x64/dist/mcp-server.cjs"
+			],
+			"tools": [
+				"*"
+			],
+			"env": {
+				"VEXP_WORKSPACE": "/home/kickapookid/projects/DecisionSwarm"
+			}
+		}
+	}
+}
