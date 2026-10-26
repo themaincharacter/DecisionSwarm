@@ -236,7 +236,10 @@ def _pack_readme(manifest: SwarmManifest, models: list[PackModel], slug: str) ->
         "session; `shutdown` (or closing stdin) exits cleanly.",
         "",
         "Model weights resolve from the shared cache (`~/.decision-swarm/models` by",
-        "default); populate it first with `decision-swarm fetch --pack .`.",
+        "default); populate it first with `decision-swarm fetch --pack .`. A `models/`",
+        "directory sitting beside this pack is used automatically — that is what a",
+        "`.swarmpack.tar` bundle contains, so an unpacked bundle needs no cache and",
+        "no extra flag.",
         "",
     ]
     return "\n".join(lines)

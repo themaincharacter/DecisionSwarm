@@ -106,21 +106,31 @@ sequenceDiagram
   participant B as decision-swarm build
   participant R as registry
   participant K as cache (read-only)
+  participant H as Hugging Face Hub
   participant P as Pack directory
+  participant Z as Bundle (.tar)
 
   U->>G: views + 2–8 cells + typed questions
   G->>B: build --manifest TMP.json --dest ./packs/x --json
   B->>R: resolve model + loader per cell
-  B->>K: read sizes and digests (no download)
+  B->>K: read sizes and digests (no weight download)
+  B->>H: resolve revision → commit (skipped by --no-pin)
   B->>P: swarm.json
   B->>P: models.lock.json
   B->>P: runtime/ (rendered from templates/runtime/)
   B->>P: README.md
-  P-->>G: summary JSON
+  B->>K: copy cached checkpoints (export, on by default)
+  B->>Z: pack + models/ → my-swarm.swarmpack.tar
+  B-->>G: summary JSON (pack path, bundle path)
 ```
 
-Building never downloads. Weights arrive via `fetch`, and only the *lockfile*
-records what they should be.
+Building downloads no weights, but it is not purely offline and not always
+small: it asks the Hub which commit each floating revision points at (one
+metadata call per checkpoint; `--no-pin` skips it, and a failed lookup just
+records `commit: null`), and by default it copies the cached checkpoints into a
+bundle. The lockfile is what makes a run verifiable — repo, revision, commit and
+per-file digests — and a checkpoint missing from the cache is recorded as
+`cached: false` rather than given invented digests.
 
 ## 4. Artifacts on disk
 
