@@ -36,6 +36,20 @@ def _models_root(args: argparse.Namespace) -> str | Path | None:
     return None
 
 
+def _envs_root(args: argparse.Namespace) -> str | Path | None:
+    """``--envs-dir``, else an ``envs/`` directory bundled beside the pack."""
+    explicit = getattr(args, "envs_dir", None)
+    if explicit:
+        return explicit
+    pack_arg = getattr(args, "pack", None)
+    if pack_arg:
+        pack_dir = Path(pack_arg)
+        bundled = pack_dir / pack.BUNDLED_ENVS_DIR
+        if pack_dir.is_dir() and bundled.is_dir():
+            return bundled
+    return None
+
+
 def _add_pack_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--pack", required=True, metavar="DIR", help="path to the swarm pack directory")
 
@@ -166,7 +180,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     plans = orchestrator.plan_cells(
         swarm,
         registry_entries=entries,
-        envs_root=args.envs_dir,
+        envs_root=_envs_root(args),
         models_root=_models_root(args),
     )
     print(f"serving {swarm.name}: {len(swarm.cells)} cells over stdio", file=sys.stderr)
@@ -194,9 +208,26 @@ def _cmd_build(args: argparse.Namespace) -> int:
     )
 
     bundle: str | None = None
+    include_envs = not args.no_envs
     if args.export:
+        if include_envs:
+            unbuilt = pack.missing_envs(dest, envs_root=_envs_root(args))
+            if unbuilt:
+                print(
+                    "decision-swarm: warning: bundle carries no envs for: "
+                    + ", ".join(unbuilt)
+                    + " (run 'decision-swarm install' first to include them)",
+                    file=sys.stderr,
+                )
         try:
-            bundle = str(pack.export_bundle(dest, models_root=args.models_dir))
+            bundle = str(
+                pack.export_bundle(
+                    dest,
+                    models_root=args.models_dir,
+                    envs_root=_envs_root(args),
+                    include_envs=include_envs,
+                )
+            )
         except pack.PackError as exc:
             print(
                 f"decision-swarm: warning: no bundle written: {exc} "
@@ -235,8 +266,24 @@ def _cmd_build(args: argparse.Namespace) -> int:
 
 
 def _cmd_export(args: argparse.Namespace) -> int:
-    """Bundle a pack and the weights it pins into one transferable tar."""
-    dest = pack.export_bundle(args.pack, args.dest, models_root=_models_root(args))
+    """Bundle a pack with the weights and envs it needs into one tar."""
+    include_envs = not args.no_envs
+    if include_envs:
+        unbuilt = pack.missing_envs(args.pack, envs_root=_envs_root(args))
+        if unbuilt:
+            print(
+                "decision-swarm: warning: bundle carries no envs for: "
+                + ", ".join(unbuilt)
+                + " (run 'decision-swarm install --pack ...' first to include them)",
+                file=sys.stderr,
+            )
+    dest = pack.export_bundle(
+        args.pack,
+        args.dest,
+        models_root=_models_root(args),
+        envs_root=_envs_root(args),
+        include_envs=include_envs,
+    )
     print(f"bundled  {dest}  ({dest.stat().st_size} bytes)")
     return 0
 
@@ -322,6 +369,7 @@ def build_parser() -> argparse.ArgumentParser:
     build_parser.add_argument("--manifest", required=True, metavar="FILE", help="path to swarm.json")
     build_parser.add_argument("--dest", required=True, metavar="DIR", help="pack output directory")
     _add_models_dir_argument(build_parser)
+    _add_envs_dir_argument(build_parser)
     build_parser.add_argument(
         "--no-pin",
         action="store_true",
@@ -340,6 +388,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_false",
         help="write only the pack directory, without the transferable bundle",
     )
+    build_parser.add_argument(
+        "--no-envs",
+        action="store_true",
+        help="bundle weights only; the recipient builds the cell envs with 'install'",
+    )
     build_parser.add_argument("--json", action="store_true", help="print a machine-readable summary")
     build_parser.set_defaults(handler=_cmd_build)
 
@@ -352,6 +405,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--dest",
         metavar="FILE",
         help="bundle path (default: <pack>.swarmpack.tar beside the pack directory)",
+    )
+    export_parser.add_argument(
+        "--no-envs",
+        action="store_true",
+        help="bundle weights only; the recipient builds the cell envs with 'install'",
     )
     export_parser.set_defaults(handler=_cmd_export)
 

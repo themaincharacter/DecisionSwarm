@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from decision_swarm import cache, manifest as manifest_mod, pack
+from decision_swarm import cache, envs, manifest as manifest_mod, pack
 from decision_swarm.registry import ModelEntry
 
 MANIFEST_DICT = {
@@ -258,6 +258,60 @@ def test_export_bundle_accepts_an_explicit_destination(
     bundle = pack.export_bundle(dest, tmp_path / "out" / "ship.tar", models_root=cache_root)
 
     assert bundle == tmp_path / "out" / "ship.tar" and bundle.is_file()
+
+
+def _seed_envs(root: Path, swarm: manifest_mod.SwarmManifest) -> list[str]:
+    """Plant built-looking envs (one python per unique package source)."""
+    keys: list[str] = []
+    for planned in envs.cell_envs(swarm, envs_root=root):
+        (planned.path / "bin").mkdir(parents=True, exist_ok=True)
+        (planned.path / "bin" / "python").write_text("", encoding="utf-8")
+        keys.append(planned.key)
+    return keys
+
+
+def test_export_bundle_carries_the_cell_envs(
+    tmp_path: Path, swarm: manifest_mod.SwarmManifest
+) -> None:
+    cache_root, envs_root = tmp_path / "cache", tmp_path / "envs"
+    _seed_cache(cache_root, swarm)
+    keys = _seed_envs(envs_root, swarm)
+    dest = pack.build_pack(swarm, tmp_path / "my-swarm", models_root=cache_root)
+
+    bundle = pack.export_bundle(dest, models_root=cache_root, envs_root=envs_root)
+
+    with tarfile.open(bundle) as archive:
+        names = set(archive.getnames())
+    assert len(keys) == 2  # one per unique package source
+    for key in keys:
+        assert f"my-swarm/envs/{key}/bin/python" in names
+
+
+def test_export_bundle_can_leave_envs_out(
+    tmp_path: Path, swarm: manifest_mod.SwarmManifest
+) -> None:
+    cache_root, envs_root = tmp_path / "cache", tmp_path / "envs"
+    _seed_cache(cache_root, swarm)
+    _seed_envs(envs_root, swarm)
+    dest = pack.build_pack(swarm, tmp_path / "my-swarm", models_root=cache_root)
+
+    bundle = pack.export_bundle(
+        dest, models_root=cache_root, envs_root=envs_root, include_envs=False
+    )
+
+    with tarfile.open(bundle) as archive:
+        assert not any("/envs/" in name for name in archive.getnames())
+
+
+def test_missing_envs_reports_unbuilt_sources(
+    tmp_path: Path, swarm: manifest_mod.SwarmManifest
+) -> None:
+    dest = pack.build_pack(swarm, tmp_path / "my-swarm", models_root=tmp_path / "cache")
+
+    assert set(pack.missing_envs(dest, envs_root=tmp_path / "envs")) == {
+        "laya>=0.3.20",
+        "git+https://github.com/r33drichards/laya-vision",
+    }
 
 
 def test_helpers_derive_names() -> None:

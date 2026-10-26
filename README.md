@@ -77,9 +77,12 @@ shared cache).
 **Packs are descriptions; bundles are distributions.** A pack directory is small and
 never contains weights — the lockfile pins repo, revision, commit and digests, and the
 weights resolve from `~/.decision-swarm/models`. To hand a swarm to someone else, ship
-the bundle: `build` writes `<pack>.swarmpack.tar` (pack + weights) by default, and
-`export` does it for an existing pack. Unpack it anywhere and `serve --pack ./my-swarm`
-finds the adjacent `models/` directory with no extra flag and no network.
+the bundle: `build` writes `<pack>.swarmpack.tar` by default, and `export` does it for an
+existing pack. A bundle carries the pack plus `models/` and the built `envs/`; unpack it
+anywhere and `serve --pack ./my-swarm` finds both with no extra flag and no network.
+Bundled venvs keep a pointer to the base interpreter they were built against, so a
+recipient whose Python lives elsewhere should run `install` instead (`--no-envs` is the
+explicit opt-out).
 
 ### Long-lived decisions (`serve`)
 

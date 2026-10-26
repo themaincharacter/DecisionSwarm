@@ -171,16 +171,19 @@ which `serve`/`run` pick up automatically.
 
 ### Handing a swarm to someone else
 
-1. **Sender** (GUI or CLI): *Download* to populate the cache, then *Submit*, which
-   writes `my-swarm/` **and** `my-swarm.swarmpack.tar` containing `my-swarm/` plus
-   `models/<repo>/<revision>/`. Ship the `.tar`.
-2. **Recipient**: unpack it, run `decision-swarm install --pack my-swarm` once, then
-   `decision-swarm serve --pack my-swarm`. No GUI, no shared cache, and no Hub access
-   for the weights.
+1. **Sender** (GUI or CLI): *Download* to populate the cache, `install` to build the
+   cell envs, then *Submit*, which writes `my-swarm/` **and**
+   `my-swarm.swarmpack.tar` containing `my-swarm/`, `models/<repo>/<revision>/` and
+   `envs/<package-source-key>/`. Ship the `.tar`.
+2. **Recipient**: unpack it, then `decision-swarm serve --pack my-swarm`. No GUI, no
+   shared cache, no PyPI round trip, no Hub access.
 
-The one thing not in the bundle is the cell environments: `install` builds a venv
-per `package_source`, so the recipient needs PyPI reachability once (or a copy of
-`~/.decision-swarm/envs`).
+Env bundling is best-effort by design. `build` warns when an env was never built — the
+bundle then carries weights only and the recipient runs `install` themselves
+(`--no-envs` asks for that explicitly). And a venv retains a pointer to the base
+interpreter it was created from, so a bundled env only works when the recipient has that
+same interpreter path; otherwise `plan_cells` falls back to the current interpreter with
+a warning and the recipient should `install`.
 
 ## 5. Who owns what
 

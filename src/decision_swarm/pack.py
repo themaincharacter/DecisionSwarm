@@ -18,8 +18,8 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from decision_swarm import cache, registry
-from decision_swarm.manifest import MANIFEST_NAME, SwarmManifest, save_manifest
+from decision_swarm import cache, envs, registry
+from decision_swarm.manifest import MANIFEST_NAME, SwarmManifest, load_manifest, save_manifest
 
 PACK_LOCKFILE_NAME = "models.lock.json"
 """Model lockfile name inside a pack."""
@@ -32,6 +32,9 @@ PACK_README_NAME = "README.md"
 
 BUNDLED_MODELS_DIR = "models"
 """Weights directory inside an exported bundle (a pack directory has none)."""
+
+BUNDLED_ENVS_DIR = "envs"
+"""Per-package virtualenv directory inside an exported bundle."""
 
 BUNDLE_SUFFIX = ".swarmpack.tar"
 """Suffix of the transferable artifact ``export`` writes."""
@@ -237,9 +240,9 @@ def _pack_readme(manifest: SwarmManifest, models: list[PackModel], slug: str) ->
         "",
         "Model weights resolve from the shared cache (`~/.decision-swarm/models` by",
         "default); populate it first with `decision-swarm fetch --pack .`. A `models/`",
-        "directory sitting beside this pack is used automatically — that is what a",
-        "`.swarmpack.tar` bundle contains, so an unpacked bundle needs no cache and",
-        "no extra flag.",
+        "or `envs/` directory sitting beside this pack is used automatically — that is",
+        "what a `.swarmpack.tar` bundle contains, so an unpacked bundle needs no cache,",
+        "no PyPI round trip and no extra flag.",
         "",
     ]
     return "\n".join(lines)
@@ -274,21 +277,37 @@ def missing_checkpoints(
     ]
 
 
+def missing_envs(
+    pack_dir: str | Path, *, envs_root: str | Path | None = None
+) -> list[str]:
+    """Package sources whose env has not been built yet."""
+    planned = envs.cell_envs(load_manifest(pack_dir), envs_root=envs_root)
+    return [cell_env.package_source for cell_env in planned if not cell_env.path.is_dir()]
+
+
 def export_bundle(
     pack_dir: str | Path,
     dest: str | Path | None = None,
     *,
     models_root: str | Path | None = None,
+    envs_root: str | Path | None = None,
+    include_envs: bool = True,
 ) -> Path:
-    """Tar a pack together with the weights it pins into one transferable file.
+    """Tar a pack together with the weights and envs it needs.
 
     Layout::
 
         <pack-name>/            swarm.json, models.lock.json, runtime/, README.md
         <pack-name>/models/     <hf-repo>/<revision>/, copied from the cache
+        <pack-name>/envs/       <package-source-key>/, copied from the env store
 
-    The weights land under ``models/`` so the recipient needs no shared cache:
-    ``serve`` picks up a ``models/`` directory beside the pack automatically.
+    The weights land under ``models/`` and the envs under ``envs/`` so a
+    recipient needs neither a shared cache nor a PyPI round trip: ``serve`` picks
+    up both directories when they sit beside the pack.
+
+    Only weights are mandatory: an unbuilt env is skipped (``missing_envs``
+    reports it) so a bundle can still ship for a recipient who will run
+    ``install`` themselves.
     """
     pack_dir = Path(pack_dir)
     if not (pack_dir / MANIFEST_NAME).is_file():
@@ -305,10 +324,14 @@ def export_bundle(
     dest_path.parent.mkdir(parents=True, exist_ok=True)
     cache_root = cache.models_dir(models_root)
     top = pack_dir.name
+    cell_envs = (
+        envs.cell_envs(load_manifest(pack_dir), envs_root=envs_root) if include_envs else []
+    )
     with tarfile.open(dest_path, "w") as archive:
         for path in sorted(pack_dir.rglob("*")):
-            if BUNDLED_MODELS_DIR in path.relative_to(pack_dir).parts:
-                continue  # never nest a previous bundle's weights
+            parts = path.relative_to(pack_dir).parts
+            if BUNDLED_MODELS_DIR in parts or BUNDLED_ENVS_DIR in parts:
+                continue  # never nest a previous bundle's payload
             archive.add(
                 path,
                 arcname=str(Path(top) / path.relative_to(pack_dir)),
@@ -318,6 +341,14 @@ def export_bundle(
             archive.add(
                 cache_root / repo / revision,
                 arcname=str(Path(top) / BUNDLED_MODELS_DIR / repo / revision),
+                recursive=True,
+            )
+        for cell_env in cell_envs:
+            if not cell_env.path.is_dir():
+                continue  # not built; the recipient runs 'install'
+            archive.add(
+                cell_env.path,
+                arcname=str(Path(top) / BUNDLED_ENVS_DIR / cell_env.key),
                 recursive=True,
             )
     return dest_path

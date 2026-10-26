@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+import tarfile
 from pathlib import Path
 
 import pytest
 
-from decision_swarm import cache, cli, manifest as manifest_mod, pack
+from decision_swarm import cache, cli, envs, manifest as manifest_mod, pack
 from test_cache import FakeDownloader
 from test_orchestrator import BROWSER_SWARM, OBS
 
@@ -153,6 +154,59 @@ def test_build_without_export_writes_only_the_pack(
 
     assert dest.is_dir()
     assert not (tmp_path / "my-swarm.swarmpack.tar").exists()
+
+
+def test_build_includes_envs_when_they_are_built(
+    manifest_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    downloader = FakeDownloader()
+    monkeypatch.setattr(cache, "hub_download", downloader)
+    swarm = manifest_mod.parse_manifest(BROWSER_SWARM)
+    cache_root, envs_root = tmp_path / "cache", tmp_path / "envs"
+    for entry in pack.unique_entries(swarm):
+        cache.fetch(entry, root=cache_root, downloader=downloader)
+    for planned in envs.cell_envs(swarm, envs_root=envs_root):
+        (planned.path / "bin").mkdir(parents=True, exist_ok=True)
+        (planned.path / "bin" / "python").write_text("", encoding="utf-8")
+    dest = tmp_path / "my-swarm"
+
+    assert (
+        cli.main(
+            [
+                "build",
+                "--manifest",
+                str(manifest_file),
+                "--dest",
+                str(dest),
+                "--models-dir",
+                str(cache_root),
+                "--envs-dir",
+                str(envs_root),
+            ]
+        )
+        == 0
+    )
+
+    with tarfile.open(tmp_path / "my-swarm.swarmpack.tar") as archive:
+        names = archive.getnames()
+    assert any("/envs/" in name for name in names)
+    assert any("/models/" in name for name in names)
+
+
+def test_build_warns_when_envs_are_missing(
+    manifest_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    downloader = FakeDownloader()
+    monkeypatch.setattr(cache, "hub_download", downloader)
+    swarm = manifest_mod.parse_manifest(BROWSER_SWARM)
+    for entry in pack.unique_entries(swarm):
+        cache.fetch(entry, root=tmp_path / "cache", downloader=downloader)
+
+    assert _build(tmp_path / "my-swarm", manifest_file) == 0
+
+    err = capsys.readouterr().err
+    assert "carries no envs" in err and "stub-text" in err
+    assert (tmp_path / "my-swarm.swarmpack.tar").is_file()
 
 
 def test_build_reports_invalid_manifests(

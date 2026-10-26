@@ -39,8 +39,8 @@ that serves it. A pack never contains model weights.
 _Avoid_: bundle, artifact, project
 
 **Bundle**:
-A pack together with the weights it pins, packed as one file so it can be handed to
-someone who has no model cache.
+A pack together with the weights and cell envs it needs, packed as one file so it can be
+handed to someone who has no model cache.
 _Avoid_: archive, tarball, dist
 
 **Manifest**:
