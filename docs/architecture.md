@@ -17,10 +17,11 @@ flowchart LR
   end
 
   subgraph runtime["Run time — Python engine (one process, one supervisor)"]
-    CLI_R["decision-swarm serve / run"]
+    CLI_R["decision-swarm serve / run / mcp"]
     PLAN["orchestrator.plan_cells<br/>model · loader · interpreter · view types"]
     SWARM["orchestrator.Swarm<br/>warm supervisor"]
     SRV["serve.serve_loop<br/>JSONL on stdio"]
+    MCPW["runtime/mcp.py<br/>MCP tools over stdio"]
     W1["worker · cell A<br/>own venv, own model copy"]
     W2["worker · cell B<br/>own venv, own model copy"]
     W3["worker · cell C<br/>own venv, own model copy"]
@@ -31,6 +32,7 @@ flowchart LR
     RS["Rust"]
     ND["Node"]
     GD["Godot / browser"]
+    AG["AI agent<br/>opencode · Cursor · Claude Code"]
   end
 
   CACHE[("Shared caches<br/>~/.decision-swarm/models<br/>~/.decision-swarm/envs")]
@@ -42,6 +44,9 @@ flowchart LR
   CLI_R --> PLAN --> SWARM
   CLI_R --> SRV
   SRV <--> SWARM
+  MCPW <-->|describe · judge| SWARM
+  MCPW -.->|authoring tools (optional)| PACKDIR
+  AG <-->|MCP tools| MCPW
   SWARM <--> W1
   SWARM <--> W2
   SWARM <--> W3
@@ -194,7 +199,7 @@ Four words that are easy to conflate; each answers a different question.
 | **Engine** | "What computes the answers?" | `src/decision_swarm/` | never — it *is* the program | Python only |
 | **Pack** | "Which cells, views, questions, and which models?" | `packs/<name>/` | Submit | data |
 | **Bundle** | "How does it travel?" | `<pack>.swarmpack.tar` | Submit (`--export`, on by default) | data |
-| **Transport** | "How does a consumer reach a warm swarm?" | `serve` (stdio today) | at `serve` start | n/a |
+| **Transport** | "How does a consumer reach a warm swarm?" | `serve` (JSONL on stdio) or `mcp` (MCP tools on stdio) | at start | n/a |
 | **Runtime** | "How does a *Python* consumer get a command/import?" | pack's `runtime/` | always generated today | Python |
 | **Client** | "How does *my* code call it?" | the consumer's repo | by the consumer | any |
 
@@ -205,13 +210,14 @@ Two consequences worth stating plainly:
 - `runtime/` is a convenience, not a requirement. `decision-swarm serve --pack
   ./my-swarm` works without it.
 
-## 6. Planned: the `--http` seam
+## 6. The `answer()` seam
 
-`serve_loop` currently interleaves I/O with decision logic, so a second transport
-would have to copy the logic. The refactor extracts one transport-neutral
-function and leaves both adapters thin.
+`serve.run_query()` and `serve.answer()` hold everything protocol-independent:
+envelope checks, `parse_query`, `service.query`, and error → dict. Two adapters sit
+thinly on top of it today — the JSONL stdio loop and the MCP tool server — and a
+future HTTP transport is a third adapter rather than a rewrite.
 
-**Today — logic inline in the stdio adapter:**
+**Before ADR-0002 — logic inline in the stdio adapter:**
 
 ```mermaid
 flowchart LR
@@ -235,8 +241,10 @@ What each side owns:
 | Piece | Responsibility |
 |---|---|
 | `answer()` | everything protocol-independent: envelope checks, `parse_query`, `service.query`, error → dict |
+| `run_query()` | the same path, returning the `SwarmResult` so a caller can project it |
 | `serve_loop()` | read a line, call `answer()`, write a line, honour `shutdown` / EOF |
-| HTTP adapter | body in, status + body out, `GET /v1/health` from the same `ready` payload |
+| MCP adapter (`runtime/mcp.py`) | JSON-RPC in, `tools/call` → tool handler → text content out; emits no `ready` line because a tool call is its own request |
+| HTTP adapter (planned) | body in, status + body out, `GET /v1/health` from the same `ready` payload |
 
 HTTP stays a flag on the existing command (`serve --pack P --http`), not a new
 command, so the warm-up sequence and the process lifecycle are identical. Under
@@ -248,7 +256,71 @@ Requests are serialized: one swarm per process, queued behind a lock, each query
 still fanning out to all cells in parallel. A second concurrent consumer is a
 second process, not a worker pool.
 
-## 7. What is deliberately not here
+## 7. `mcp` — how an agent uses a pack
+
+A program drives a pack through `serve`. An agent cannot: it has no pipe to keep and
+no place to hold a wire format. `mcp` gives it the pack as two tools, backed by the
+same warm swarm.
+
+```mermaid
+sequenceDiagram
+  participant A as Agent (opencode, Cursor, ...)
+  participant M as decision-swarm mcp
+  participant T as agent.AgentTools
+  participant P as WarmPool
+  participant W as Cell workers
+
+  A->>M: initialize
+  M-->>A: capabilities.tools
+  A->>M: tools/list
+  M-->>A: describe, judge
+  A->>M: tools/call describe
+  M->>T: read the manifest only
+  T-->>M: views · cells · questions · cache status
+  M-->>A: text content
+  A->>M: tools/call judge {views}
+  T->>P: get(pack) — first call starts the swarm
+  P->>W: spawn + load
+  T->>W: query (via serve.run_query)
+  M-->>A: compact cells
+  A->>M: tools/call judge {views}  (warm)
+```
+
+The two calls are split by cost, and that split is the whole shape of agent use:
+
+| Tool | Cost | Returns |
+|---|---|---|
+| `describe` | a manifest read — no model load | views, cells, each cell's questions and criteria, cache status |
+| `judge` | model load on the first call for a pack, then model latency | per-cell answers with confidence |
+
+`describe` first is the intended flow: it is free, so an agent discovers which views
+to supply before any weights move. `judge` then stays warm for the rest of the
+session. With no `pack` argument, `describe` lists the packs it can see — that is how
+an agent finds out what exists.
+
+| Piece | Owns |
+|---|---|
+| `runtime/mcp.py` | JSON-RPC framing, the four methods, `isError` mapping, stdout purity |
+| `agent.AgentTools` | the tool table, pack resolution, projections |
+| `agent.WarmPool` | lazy start, LRU eviction at `--max-warm`, shutdown |
+| `serve.run_query()` | envelope + `parse_query` + `service.query`, shared with `serve_loop` |
+
+Two properties worth stating plainly:
+
+- **One warm swarm at a time.** A swarm is gigabytes of weights across 2–8 worker
+  processes, so judging a second pack evicts the first (`--max-warm` to change).
+- **stdout is the transport.** `serve()` hands file descriptor 1 to stderr for the
+  session, so a stray `print`, a `pip` run or a download progress bar cannot corrupt
+  the stream.
+
+Agents *can* also build and prepare packs — `list_models`, `build`, `fetch`, `install`,
+`export` — but that is an operator convenience, not the intended path: the GUI and CLI
+author packs, agents consume them. When those tools are reachable they are gated, because
+a manifest is model-authored data and `envs.build_env` executes a cell's
+`package_source` with pip: model ids and package sources must resolve in
+`registry/models.json` unless the server runs with `--allow-unvetted`.
+
+## 8. What is deliberately not here
 
 - **No in-process inference outside Python.** Weights are PyTorch checkpoints and
   the only loaders are `laya` / `laya-vision`. No ONNX export exists, so Rust and

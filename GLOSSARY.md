@@ -85,3 +85,9 @@ _Avoid_: wrapper, SDK, client
 **Client**:
 Consumer-side code, in whatever language, that talks to a served swarm.
 _Avoid_: wrapper, binding, SDK, adapter
+
+**Agent**:
+A client that is a language model choosing tools, rather than a program written by
+hand. It discovers a pack through tool schemas and calls it a few times per task,
+so discovery and small results matter more to it than latency.
+_Avoid_: bot, assistant, copilot

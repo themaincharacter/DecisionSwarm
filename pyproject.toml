@@ -25,6 +25,9 @@ dependencies = ["huggingface_hub>=0.30"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+# The official MCP SDK, used only by tests/test_mcp_conformance.py (which skips
+# when it is absent). Never a runtime dependency: the engine ships frozen.
+conformance = ["mcp>=1.0"]
 
 [project.scripts]
 decision-swarm = "decision_swarm.cli:main"

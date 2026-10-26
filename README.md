@@ -2,8 +2,9 @@
 
 Assemble a **swarm of Laya decision-model sensors** over one observation, download the
 required models once into a shared local cache, and package the configured swarm as a
-runnable artifact: an installable Python library, a bash-callable CLI, and a long-lived
-decision service a real-time consumer can query at model latency.
+runnable artifact: an installable Python library, a bash-callable CLI, a long-lived
+decision service a real-time consumer can query at model latency, and a pack an AI
+agent can call as two tools.
 
 > **Status: Phases 0–5 done.** Core (manifest, registry, cache, packs), runtime
 > (workers, protocol, orchestrator, the warm `serve` service), the CLI + per-OS
@@ -19,6 +20,7 @@ decision service a real-time consumer can query at model latency.
 | **Swarm** | 2–8 cells observing the same observation. |
 | **Pack** | The build artifact: `swarm.json` + `models.lock.json` + generated `runtime/` + README. |
 | **Serve** | A pack running as a long-lived process: the swarm stays warm and answers JSONL queries over stdio. |
+| **Agent** | A consumer that is a language model calling tools: it describes a pack, then judges observations. |
 
 Each cell answers typed questions — `choice`, `score`, or `noul` (yes/no probability) —
 over the views it is bound to, in a single forward pass with calibrated probabilities.
@@ -62,6 +64,7 @@ decision-swarm fetch   --pack ./my-swarm            # pre-download models to the
 decision-swarm install --pack ./my-swarm            # build per-package envs
 decision-swarm run     --pack ./my-swarm --input obs.json [--offline] [--json|--pretty]
 decision-swarm serve   --pack ./my-swarm [--offline]  # long-lived: JSONL queries over stdio
+decision-swarm mcp     [--packs-dir DIR] [--pack DIR]  # agent access to a pack (MCP over stdio)
 decision-swarm export  --pack ./my-swarm [--dest out.tar]  # pack + weights in one file
 ```
 
@@ -108,6 +111,54 @@ service down. A built pack's generated runtime exposes the same loop as
 `<pack-slug> serve`; the design is recorded in
 [ADR 0001](docs/adr/0001-serve-jsonl-stdio.md).
 
+### AI agents (`mcp`)
+
+A program drives a pack through `serve`. An agent cannot: it has no pipe to keep and
+nowhere to put a wire format. `mcp` hands it the pack as two tools instead, over the
+[Model Context Protocol](https://modelcontextprotocol.io) on stdio, so an agent host
+(opencode, Cursor, Claude Code, VS Code) spawns it once and lets the model call it:
+
+| Tool | What the agent does with it |
+|---|---|
+| `describe` | learn the pack — views, cells, questions, criteria — without loading a model |
+| `judge` | submit one observation, read each cell's typed answer and confidence |
+
+The intended flow is `describe` -> `judge`. Describing is free, so the agent can find
+out which views to supply before any weights move; judging then loads the models once
+for that pack and stays warm, so a session of decisions costs one load.
+
+```bash
+decision-swarm mcp --packs-dir ./packs --pack ./packs/browser-swarm
+```
+
+Every built pack ships `mcp.json`, a ready-to-paste client config:
+
+```json
+{
+  "mcpServers": {
+    "decision-swarm": {
+      "command": "decision-swarm",
+      "args": ["mcp", "--packs-dir", "/abs/packs", "--pack", "/abs/packs/browser-swarm"]
+    }
+  }
+}
+```
+
+The snippet stores absolute paths, so regenerate it with
+`decision-swarm mcp --print-config --pack ./my-swarm` if the pack moves.
+
+One swarm stays warm at a time — it is gigabytes of weights across 2-8 worker
+processes — so judging a second pack evicts the first; `--max-warm` changes that.
+Image views are file paths, which is right for a server that runs on the same machine
+as the agent.
+
+The server can also author packs (`list_models`, `build`, `fetch`, `install`,
+`export`), but that is an operator convenience rather than the intended path: packs
+are normally built in the GUI or CLI and consumed by agents. Those tools are gated —
+`install` executes a cell's package source with pip, so unless the server runs with
+`--allow-unvetted`, model ids and package sources must resolve in
+`registry/models.json`. See [ADR 0002](docs/adr/0002-agent-transport-mcp.md).
+
 ## Desktop GUI
 
 `gui/` is a Tauri v2 app: a thin Rust shell around a vanilla-JS UI that drives the same
@@ -115,7 +166,8 @@ service down. A built pack's generated runtime exposes the same loop as
 --manifest`), so GUI and CLI produce identical packs. Define observation views and 2–8
 cells (models with per-model licenses, view bindings, typed `choice`/`score`/`noul`
 questions), watch the live cluster panel (checkpoints, params, disk/RAM estimates,
-workers), Download the models, and Submit — then run or serve the pack from the CLI.
+workers), Download the models, and Submit — then run or serve the pack from the CLI,
+or point an agent at it with the pack's `mcp.json`.
 The UI also runs in a plain browser against a mock bridge; see `gui/README.md` for dev
 setup and Linux build dependencies.
 
@@ -148,8 +200,10 @@ src/decision_swarm/
 ├── runtime/
 │   ├── orchestrator.py         # spawns cell workers, collects results
 │   ├── worker.py               # per-cell process: load model once, answer queries
-│   ├── serve.py                # long-lived JSONL decision service over stdio
+│   ├── serve.py                # long-lived JSONL decision service over stdio (+ answer() seam)
+│   ├── mcp.py                  # MCP tools over stdio (hand-rolled JSON-RPC, no deps)
 │   └── protocol.py             # stdio JSON protocol
+├── agent.py                    # agent-facing tools: describe, judge, authoring
 ├── pack.py                     # pack builder (what Submit emits)
 ├── envs.py                     # per-package venv builder/installer
 └── cli.py                      # decision-swarm entrypoint

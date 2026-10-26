@@ -14,8 +14,8 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict
 from pathlib import Path
 
-from decision_swarm import __version__, cache, envs, manifest, pack, query, registry
-from decision_swarm.runtime import loaders, orchestrator, serve, worker
+from decision_swarm import __version__, agent, cache, envs, manifest, pack, query, registry
+from decision_swarm.runtime import loaders, mcp, orchestrator, serve, worker
 
 
 def _models_root(args: argparse.Namespace) -> str | Path | None:
@@ -72,9 +72,13 @@ def _add_envs_dir_argument(parser: argparse.ArgumentParser) -> None:
 
 def _cmd_inspect(args: argparse.Namespace) -> int:
     """Print cells, models, sizes, and cache status for a pack."""
-    swarm = manifest.load_manifest(args.pack)
-    entries = registry.load_registry()
     models_root = _models_root(args)
+    entries = registry.load_registry()
+    if args.json:
+        payload = agent.describe_pack(args.pack, entries=entries, models_root=models_root)
+        print(json.dumps(payload, indent=2))
+        return 0
+    swarm = manifest.load_manifest(args.pack)
     models = pack.collect_models(swarm, models_root=models_root, registry_entries=entries)
     print(f"pack: {swarm.name}")
     print("views: " + ", ".join(f"{view.name} ({view.type})" for view in swarm.views))
@@ -167,6 +171,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
     )
     if args.pretty:
         _print_pretty(result)
+    elif args.detail == "compact":
+        print(json.dumps(result.to_compact(), indent=2))
     else:
         print(json.dumps(result.to_dict(), indent=2))
     return 0
@@ -186,6 +192,33 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     print(f"serving {swarm.name}: {len(swarm.cells)} cells over stdio", file=sys.stderr)
     with orchestrator.Swarm(plans) as warm:
         return serve.serve_loop(warm, swarm)
+
+
+def _cmd_mcp(args: argparse.Namespace) -> int:
+    """Serve packs as MCP tools over stdio, for an agent host to spawn."""
+    if args.print_config:
+        if not args.pack:
+            print("decision-swarm: --print-config needs --pack", file=sys.stderr)
+            return 2
+        print(json.dumps(pack.mcp_config(args.pack), indent=2))
+        return 0
+    config = agent.AgentConfig(
+        packs_dirs=tuple(Path(raw) for raw in (args.packs_dir or ())),
+        default_pack=Path(args.pack) if args.pack else None,
+        allow_unvetted=args.allow_unvetted,
+        max_warm=args.max_warm,
+        models_root=_models_root(args),
+        envs_root=_envs_root(args),
+    )
+    tools = agent.AgentTools(config)
+    print(
+        f"decision-swarm mcp: {len(tools.tools())} tools over stdio",
+        file=sys.stderr,
+    )
+    try:
+        return mcp.serve(tools.tools(), server_version=__version__)
+    finally:
+        tools.close()
 
 
 def _cmd_build(args: argparse.Namespace) -> int:
@@ -319,6 +352,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_pack_argument(inspect_parser)
     _add_models_dir_argument(inspect_parser)
+    inspect_parser.add_argument("--json", action="store_true", help="print the pack description as JSON")
     inspect_parser.set_defaults(handler=_cmd_inspect)
 
     fetch_parser = subparsers.add_parser(
@@ -351,6 +385,12 @@ def build_parser() -> argparse.ArgumentParser:
     output_group = run_parser.add_mutually_exclusive_group()
     output_group.add_argument("--json", action="store_true", help="print results as JSON (default)")
     output_group.add_argument("--pretty", action="store_true", help="print results in human-readable form")
+    run_parser.add_argument(
+        "--detail",
+        choices=("full", "compact"),
+        default="full",
+        help="compact: cell -> question -> {value, confidence} (default: full)",
+    )
     run_parser.set_defaults(handler=_cmd_run)
 
     serve_parser = subparsers.add_parser(
@@ -364,6 +404,40 @@ def build_parser() -> argparse.ArgumentParser:
         "--offline", action="store_true", help="never touch the network; use the shared cache only"
     )
     serve_parser.set_defaults(handler=_cmd_serve)
+
+    mcp_parser = subparsers.add_parser(
+        "mcp",
+        help="serve packs as MCP tools over stdio (for AI agents)",
+    )
+    mcp_parser.add_argument(
+        "--packs-dir",
+        action="append",
+        metavar="DIR",
+        help="directory containing packs (repeatable); packs are discovered one level down",
+    )
+    mcp_parser.add_argument(
+        "--pack", metavar="DIR", help="default pack to judge when a tool omits 'pack'"
+    )
+    _add_models_dir_argument(mcp_parser)
+    _add_envs_dir_argument(mcp_parser)
+    mcp_parser.add_argument(
+        "--allow-unvetted",
+        action="store_true",
+        help="allow models and package sources outside the registry when building or installing",
+    )
+    mcp_parser.add_argument(
+        "--max-warm",
+        type=int,
+        default=1,
+        metavar="N",
+        help="how many swarms to keep warm (default: 1)",
+    )
+    mcp_parser.add_argument(
+        "--print-config",
+        action="store_true",
+        help="print the MCP client config for --pack and exit (use after moving a pack)",
+    )
+    mcp_parser.set_defaults(handler=_cmd_mcp)
 
     build_parser = subparsers.add_parser("build", help="build a swarm pack from a manifest")
     build_parser.add_argument("--manifest", required=True, metavar="FILE", help="path to swarm.json")

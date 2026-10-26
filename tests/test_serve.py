@@ -179,3 +179,45 @@ def test_cli_serve_runs_a_warm_swarm_over_stdio(
     assert answers["submit_button"] == {"choice": "a", "confidence": 1.0}
     assert set(answers) == {"submit_button", "url"}
     assert "views=screenshot" in result["cells"]["screenshot_sensor"]["warnings"]
+
+
+def test_answer_returns_the_wire_response(swarm: manifest_mod.SwarmManifest) -> None:
+    service = FakeSwarm(swarm)
+
+    response = serve.answer(service, swarm, {"type": "query", "id": 9, **OBS})
+
+    assert response["type"] == "result" and response["id"] == 9
+    assert set(response["cells"]) == CELL_IDS
+
+
+def test_answer_maps_errors_without_raising(swarm: manifest_mod.SwarmManifest) -> None:
+    service = FakeSwarm(swarm)
+
+    response = serve.answer(service, swarm, {"type": "query", "id": 3, "views": {"nope": "x"}})
+
+    assert response["type"] == "error" and response["id"] == 3
+    assert "unknown view" in response["message"]
+    assert service.queries == []  # never reached the swarm
+
+
+def test_answer_treats_shutdown_as_a_transport_concern(
+    swarm: manifest_mod.SwarmManifest,
+) -> None:
+    response = serve.answer(FakeSwarm(swarm), swarm, {"type": "shutdown"})
+
+    assert response["type"] == "error"
+    assert "unknown message type" in response["message"]
+
+
+def test_run_query_is_the_shared_validation_path(swarm: manifest_mod.SwarmManifest) -> None:
+    message_id, result = serve.run_query(
+        FakeSwarm(swarm), swarm, {"type": "query", "id": 11, **OBS}
+    )
+
+    assert message_id == 11
+    assert set(result.cells) == CELL_IDS
+
+
+def test_run_query_raises_on_a_bad_envelope(swarm: manifest_mod.SwarmManifest) -> None:
+    with pytest.raises(ValueError, match="must be a JSON object"):
+        serve.run_query(FakeSwarm(swarm), swarm, [1, 2])

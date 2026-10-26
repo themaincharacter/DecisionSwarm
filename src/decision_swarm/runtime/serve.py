@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Mapping
 from typing import Any, Protocol, TextIO
 
 from decision_swarm.manifest import SwarmManifest
@@ -42,6 +43,55 @@ class DecisionService(Protocol):
 def _write(stream: TextIO, payload: dict[str, Any]) -> None:
     stream.write(json.dumps(payload) + "\n")
     stream.flush()
+
+
+def _envelope_id(message: Any) -> int | None:
+    """The correlation id, or ``None`` when it is absent or not an integer."""
+    if not isinstance(message, Mapping):
+        return None
+    raw_id = message.get("id")
+    return raw_id if isinstance(raw_id, int) else None
+
+
+def run_query(
+    service: DecisionService,
+    manifest: SwarmManifest,
+    message: Any,
+) -> tuple[int | None, SwarmResult]:
+    """Validate one query envelope and run it through the swarm.
+
+    Transport-neutral: the stdio adapter and the agent tools both call this, so
+    envelope rules, ``parse_query`` validation and error text cannot drift
+    between transports. Raises on any envelope or query problem.
+    """
+    if not isinstance(message, Mapping):
+        raise ValueError("message must be a JSON object")
+    raw_id = message.get("id")
+    message_id = raw_id if isinstance(raw_id, int) else None
+    if raw_id is not None and message_id is None:
+        raise ValueError("'id' must be an integer")
+    kind = message.get("type")
+    if kind != "query":
+        raise ValueError(f"unknown message type {kind!r}")
+    data = {key: value for key, value in message.items() if key not in ENVELOPE_FIELDS}
+    return message_id, service.query(parse_query(data, manifest))
+
+
+def answer(
+    service: DecisionService,
+    manifest: SwarmManifest,
+    message: Any,
+) -> dict[str, Any]:
+    """One decoded envelope -> one response dict (``result`` or ``error``).
+
+    Control messages are transport concerns (the stdio adapter returns on
+    ``shutdown``), so they fall through to an ``error`` here.
+    """
+    try:
+        message_id, result = run_query(service, manifest, message)
+    except Exception as exc:  # noqa: BLE001 - one bad frame never ends the session
+        return {"type": "error", "id": _envelope_id(message), "message": str(exc)}
+    return {"type": "result", "id": message_id, "cells": result.to_dict()["cells"]}
 
 
 def serve_loop(
@@ -75,37 +125,7 @@ def serve_loop(
         except json.JSONDecodeError as exc:
             _write(stdout, {"type": "error", "id": None, "message": f"invalid JSON line: {exc}"})
             continue
-        if not isinstance(message, dict):
-            _write(
-                stdout,
-                {"type": "error", "id": None, "message": "message must be a JSON object"},
-            )
-            continue
-
-        kind = message.get("type")
-        if kind in CONTROL_TYPES:
+        if isinstance(message, Mapping) and message.get("type") in CONTROL_TYPES:
             return 0
-
-        raw_id = message.get("id")
-        message_id = raw_id if isinstance(raw_id, int) else None
-        if raw_id is not None and message_id is None:
-            _write(
-                stdout,
-                {"type": "error", "id": None, "message": "'id' must be an integer"},
-            )
-            continue
-        if kind != "query":
-            _write(
-                stdout,
-                {"type": "error", "id": message_id, "message": f"unknown message type {kind!r}"},
-            )
-            continue
-
-        try:
-            data = {key: value for key, value in message.items() if key not in ENVELOPE_FIELDS}
-            result = service.query(parse_query(data, manifest))
-        except Exception as exc:  # noqa: BLE001 - one bad frame never ends the session
-            _write(stdout, {"type": "error", "id": message_id, "message": str(exc)})
-            continue
-        _write(stdout, {"type": "result", "id": message_id, "cells": result.to_dict()["cells"]})
+        _write(stdout, answer(service, manifest, message))
     return 0

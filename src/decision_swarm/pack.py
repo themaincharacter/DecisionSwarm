@@ -17,6 +17,7 @@ import tarfile
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from decision_swarm import cache, envs, registry
 from decision_swarm.manifest import MANIFEST_NAME, SwarmManifest, load_manifest, save_manifest
@@ -38,6 +39,12 @@ BUNDLED_ENVS_DIR = "envs"
 
 BUNDLE_SUFFIX = ".swarmpack.tar"
 """Suffix of the transferable artifact ``export`` writes."""
+
+MCP_CONFIG_NAME = "mcp.json"
+"""Ready-to-paste MCP client config written into a pack."""
+
+MCP_SERVER_NAME = "decision-swarm"
+"""Key of this engine's entry in an MCP client config."""
 
 LOCKFILE_SCHEMA_VERSION = 1
 """Current ``models.lock.json`` schema version."""
@@ -100,6 +107,29 @@ def pack_slug(name: str) -> str:
 def pack_module(name: str) -> str:
     """Snake_case module name for a pack's runtime package."""
     return pack_slug(name).replace("-", "_")
+
+
+def mcp_config(pack_dir: str | Path) -> dict[str, Any]:
+    """A ready-to-paste MCP client config for a built pack.
+
+    The snippet carries absolute paths resolved at build time, so it points at
+    *this* copy of the pack: regenerate it after moving or unpacking the pack.
+    """
+    resolved = Path(pack_dir).expanduser().resolve()
+    return {
+        "mcpServers": {
+            MCP_SERVER_NAME: {
+                "command": "decision-swarm",
+                "args": [
+                    "mcp",
+                    "--packs-dir",
+                    str(resolved.parent),
+                    "--pack",
+                    str(resolved),
+                ],
+            }
+        }
+    }
 
 
 def default_templates_dir() -> Path:
@@ -186,7 +216,9 @@ SERVE_EXAMPLE_ERROR = '{"type": "error", "id": 1, "message": "..."}'
 SERVE_EXAMPLE_SHUTDOWN = '{"type": "shutdown"}'
 
 
-def _pack_readme(manifest: SwarmManifest, models: list[PackModel], slug: str) -> str:
+def _pack_readme(
+    manifest: SwarmManifest, models: list[PackModel], slug: str, pack_dir: str | Path
+) -> str:
     lines = [
         f"# {manifest.name} (swarm pack)",
         "",
@@ -217,6 +249,7 @@ def _pack_readme(manifest: SwarmManifest, models: list[PackModel], slug: str) ->
         f"{slug} inspect              # list the pack's cells",
         f"{slug} run --input obs.json  # one-shot: answer one observation, then exit",
         f"{slug} serve                 # long-lived: warm decision service over stdio",
+        f"{slug} mcp                   # agent access: describe + judge over MCP stdio",
         "```",
         "",
         "### Long-lived decisions (`serve`)",
@@ -243,6 +276,27 @@ def _pack_readme(manifest: SwarmManifest, models: list[PackModel], slug: str) ->
         "or `envs/` directory sitting beside this pack is used automatically — that is",
         "what a `.swarmpack.tar` bundle contains, so an unpacked bundle needs no cache,",
         "no PyPI round trip and no extra flag.",
+        "",
+        "## Agents (MCP)",
+        "",
+        f"`{MCP_CONFIG_NAME}` in this directory is a ready-to-paste MCP client config.",
+        "Point an agent host at it and the pack becomes callable tools instead of a",
+        "shell command:",
+        "",
+        "```json",
+        json.dumps(mcp_config(pack_dir), indent=2),
+        "```",
+        "",
+        "`describe` returns this pack's views, cells and questions — no model load —",
+        "which is how an agent learns which views to supply. `judge` then submits one",
+        "observation and returns each cell's typed answers with confidences; the models",
+        "load on that first call and stay warm for the session.",
+        "",
+        "The paths above are absolute, so regenerate the snippet if you move or unpack",
+        "this pack (`decision-swarm mcp --print-config --pack .`). The same server also",
+        "exposes authoring tools (`build`, `fetch`, `install`, `export`), but packs are",
+        "normally built with the GUI or CLI and consumed by agents; those tools are",
+        "registry-gated and need `--allow-unvetted` for anything outside it.",
         "",
     ]
     return "\n".join(lines)
@@ -423,5 +477,10 @@ def build_pack(
     # the runtime package embeds a copy of the manifest so it runs stand-alone
     save_manifest(manifest, runtime_dir / "src" / module / "swarm.json")
 
-    (pack_dir / PACK_README_NAME).write_text(_pack_readme(manifest, models, slug), encoding="utf-8")
+    (pack_dir / PACK_README_NAME).write_text(
+        _pack_readme(manifest, models, slug, pack_dir), encoding="utf-8"
+    )
+    (pack_dir / MCP_CONFIG_NAME).write_text(
+        json.dumps(mcp_config(pack_dir), indent=2) + "\n", encoding="utf-8"
+    )
     return pack_dir

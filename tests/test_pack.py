@@ -76,12 +76,53 @@ def test_build_pack_writes_all_artifacts(
         "swarm.json",
         "models.lock.json",
         "README.md",
+        "mcp.json",
         "runtime/pyproject.toml",
         "runtime/src/browser_swarm/__init__.py",
         "runtime/src/browser_swarm/cli.py",
         "runtime/src/browser_swarm/swarm.json",
     ):
         assert (dest / relative).is_file(), f"missing {relative}"
+
+
+def test_mcp_config_points_at_this_pack(
+    tmp_path: Path, swarm: manifest_mod.SwarmManifest
+) -> None:
+    dest = pack.build_pack(swarm, tmp_path / "my-swarm", models_root=tmp_path / "cache")
+    written = json.loads((dest / "mcp.json").read_text(encoding="utf-8"))
+
+    assert written == pack.mcp_config(dest)
+    server = written["mcpServers"]["decision-swarm"]
+    assert server["command"] == "decision-swarm"
+    assert server["args"] == [
+        "mcp",
+        "--packs-dir",
+        str(dest.resolve().parent),
+        "--pack",
+        str(dest.resolve()),
+    ]
+
+
+def test_readme_documents_the_agent_tools(
+    tmp_path: Path, swarm: manifest_mod.SwarmManifest
+) -> None:
+    dest = pack.build_pack(swarm, tmp_path / "my-swarm", models_root=tmp_path / "cache")
+    readme = (dest / "README.md").read_text(encoding="utf-8")
+
+    assert "## Agents (MCP)" in readme
+    assert '"mcpServers"' in readme
+    assert "regenerate" in readme
+
+
+def test_generated_runtime_exposes_the_mcp_command(
+    tmp_path: Path, swarm: manifest_mod.SwarmManifest
+) -> None:
+    dest = pack.build_pack(swarm, tmp_path / "my-swarm", models_root=tmp_path / "cache")
+    rendered = (dest / "runtime" / "src" / "browser_swarm" / "cli.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert '"mcp"' in rendered
 
 
 def test_pack_manifest_round_trips(tmp_path: Path, swarm: manifest_mod.SwarmManifest) -> None:

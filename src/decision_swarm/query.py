@@ -82,6 +82,27 @@ class SwarmResult:
     def to_dict(self) -> dict[str, Any]:
         return {"cells": {cell_id: result.to_dict() for cell_id, result in self.cells.items()}}
 
+    def to_compact(self) -> dict[str, Any]:
+        """Agent-facing projection: cell -> question -> ``{value, confidence}``.
+
+        Drops the model name, latency and per-answer extras, because an agent
+        pays for every token of a tool result. Cell warnings survive in a single
+        top-level list, so a degraded cell is never silently reported as a clean
+        answer.
+        """
+        cells: dict[str, Any] = {}
+        warnings: list[str] = []
+        for cell_id, result in self.cells.items():
+            cells[cell_id] = {
+                name: {"value": answer.value, "confidence": round(answer.confidence, 4)}
+                for name, answer in result.answers.items()
+            }
+            warnings.extend(f"{cell_id}: {warning}" for warning in result.warnings)
+        compact: dict[str, Any] = {"cells": cells}
+        if warnings:
+            compact["warnings"] = warnings
+        return compact
+
 
 def _fail(path: str, message: str) -> QueryError:
     return QueryError(f"{path}: {message}")
