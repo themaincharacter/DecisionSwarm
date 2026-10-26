@@ -26,3 +26,19 @@ jobs:
 
       - name: Test
         run: python -m pytest
+
+  versions:
+    name: version sources agree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Seven places declare the version and two lockfiles record it; none of
+      # them follow each other on their own. scripts/bump_version.py keeps them
+      # in step, and this job fails the build when a release forgot one.
+      - name: Check
+        run: python scripts/bump_version.py --check
