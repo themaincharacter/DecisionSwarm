@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "decision-swarm"
-version = "0.2.0"
+version = "0.3.0"
 description = "Assemble a swarm of Laya decision-model sensors over one observation and package it as a runnable artifact (Python library + CLI)."
 readme = "README.md"
 license = "Apache-2.0"
