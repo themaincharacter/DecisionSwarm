@@ -1,7 +1,7 @@
 {
   "name": "decision-swarm-gui",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Decision Swarm desktop app (Tauri shell + web UI)",
   "scripts": {
     "dev": "tauri dev",
