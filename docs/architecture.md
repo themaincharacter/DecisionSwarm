@@ -124,13 +124,15 @@ sequenceDiagram
   B-->>G: summary JSON (pack path, bundle path)
 ```
 
-Building downloads no weights, but it is not purely offline and not always
-small: it asks the Hub which commit each floating revision points at (one
-metadata call per checkpoint; `--no-pin` skips it, and a failed lookup just
-records `commit: null`), and by default it copies the cached checkpoints into a
-bundle. The lockfile is what makes a run verifiable — repo, revision, commit and
-per-file digests — and a checkpoint missing from the cache is recorded as
-`cached: false` rather than given invented digests.
+A build fetches no weights from the Hub — it copies whatever is already in the
+cache — but it is not purely offline and not always small: it asks the Hub which
+commit each floating revision points at (one metadata call per checkpoint;
+`--no-pin` skips it, and a failed lookup just records `commit: null`), and by
+default it copies the cached checkpoints into the bundle. The lockfile is what
+makes a run verifiable — repo, revision, commit and per-file digests — and a
+checkpoint missing from the cache is recorded as `cached: false` rather than
+given invented digests. Missing checkpoints also mean no bundle, since the tar
+has real weights to copy and cannot invent them.
 
 ## 4. Artifacts on disk
 
@@ -166,6 +168,19 @@ flowchart TB
 shared by every pack on the machine. `export` produces the one artifact that *does*
 carry weights — a bundle — and unpacking it puts a `models/` directory beside the pack,
 which `serve`/`run` pick up automatically.
+
+### Handing a swarm to someone else
+
+1. **Sender** (GUI or CLI): *Download* to populate the cache, then *Submit*, which
+   writes `my-swarm/` **and** `my-swarm.swarmpack.tar` containing `my-swarm/` plus
+   `models/<repo>/<revision>/`. Ship the `.tar`.
+2. **Recipient**: unpack it, run `decision-swarm install --pack my-swarm` once, then
+   `decision-swarm serve --pack my-swarm`. No GUI, no shared cache, and no Hub access
+   for the weights.
+
+The one thing not in the bundle is the cell environments: `install` builds a venv
+per `package_source`, so the recipient needs PyPI reachability once (or a copy of
+`~/.decision-swarm/envs`).
 
 ## 5. Who owns what
 
