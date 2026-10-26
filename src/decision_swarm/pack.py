@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import re
+import tarfile
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,6 +29,12 @@ PACK_RUNTIME_DIR = "runtime"
 
 PACK_README_NAME = "README.md"
 """Generated usage README inside a pack."""
+
+BUNDLED_MODELS_DIR = "models"
+"""Weights directory inside an exported bundle (a pack directory has none)."""
+
+BUNDLE_SUFFIX = ".swarmpack.tar"
+"""Suffix of the transferable artifact ``export`` writes."""
 
 LOCKFILE_SCHEMA_VERSION = 1
 """Current ``models.lock.json`` schema version."""
@@ -233,6 +240,84 @@ def _pack_readme(manifest: SwarmManifest, models: list[PackModel], slug: str) ->
         "",
     ]
     return "\n".join(lines)
+
+
+def locked_checkpoints(pack_dir: str | Path) -> list[tuple[str, str]]:
+    """``(hf_repo, revision)`` pairs a pack's lockfile pins, in order."""
+    lock_path = Path(pack_dir) / PACK_LOCKFILE_NAME
+    try:
+        data = json.loads(lock_path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise PackError(f"{lock_path}: {exc}") from exc
+    except json.JSONDecodeError as exc:
+        raise PackError(f"{lock_path}: invalid JSON ({exc})") from exc
+    checkpoints: list[tuple[str, str]] = []
+    for model in data.get("models", []):
+        repo, revision = model.get("hf_repo"), model.get("revision")
+        if repo and revision:
+            checkpoints.append((str(repo), str(revision)))
+    return checkpoints
+
+
+def missing_checkpoints(
+    pack_dir: str | Path, *, models_root: str | Path | None = None
+) -> list[str]:
+    """Pinned checkpoints that are not in the cache (``repo@revision``)."""
+    root = cache.models_dir(models_root)
+    return [
+        f"{repo}@{revision}"
+        for repo, revision in locked_checkpoints(pack_dir)
+        if not (root / repo / revision).is_dir()
+    ]
+
+
+def export_bundle(
+    pack_dir: str | Path,
+    dest: str | Path | None = None,
+    *,
+    models_root: str | Path | None = None,
+) -> Path:
+    """Tar a pack together with the weights it pins into one transferable file.
+
+    Layout::
+
+        <pack-name>/            swarm.json, models.lock.json, runtime/, README.md
+        <pack-name>/models/     <hf-repo>/<revision>/, copied from the cache
+
+    The weights land under ``models/`` so the recipient needs no shared cache:
+    ``serve`` picks up a ``models/`` directory beside the pack automatically.
+    """
+    pack_dir = Path(pack_dir)
+    if not (pack_dir / MANIFEST_NAME).is_file():
+        raise PackError(f"{pack_dir} is not a swarm pack directory")
+
+    checkpoints = locked_checkpoints(pack_dir)
+    missing = missing_checkpoints(pack_dir, models_root=models_root)
+    if missing:
+        raise PackError(
+            "model(s) not in the cache: " + ", ".join(missing) + " (run 'decision-swarm fetch' first)"
+        )
+
+    dest_path = Path(dest) if dest is not None else pack_dir.with_name(pack_dir.name + BUNDLE_SUFFIX)
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_root = cache.models_dir(models_root)
+    top = pack_dir.name
+    with tarfile.open(dest_path, "w") as archive:
+        for path in sorted(pack_dir.rglob("*")):
+            if BUNDLED_MODELS_DIR in path.relative_to(pack_dir).parts:
+                continue  # never nest a previous bundle's weights
+            archive.add(
+                path,
+                arcname=str(Path(top) / path.relative_to(pack_dir)),
+                recursive=False,
+            )
+        for repo, revision in checkpoints:
+            archive.add(
+                cache_root / repo / revision,
+                arcname=str(Path(top) / BUNDLED_MODELS_DIR / repo / revision),
+                recursive=True,
+            )
+    return dest_path
 
 
 def build_pack(

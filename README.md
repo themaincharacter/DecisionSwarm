@@ -62,6 +62,7 @@ decision-swarm fetch   --pack ./my-swarm            # pre-download models to the
 decision-swarm install --pack ./my-swarm            # build per-package envs
 decision-swarm run     --pack ./my-swarm --input obs.json [--offline] [--json|--pretty]
 decision-swarm serve   --pack ./my-swarm [--offline]  # long-lived: JSONL queries over stdio
+decision-swarm export  --pack ./my-swarm [--dest out.tar]  # pack + weights in one file
 ```
 
 All commands are implemented. `install` builds one venv per unique `package_source`
@@ -72,6 +73,13 @@ workers warm and answers query after query — see
 [Long-lived decisions](#long-lived-decisions-serve). Binaries are built per-OS with
 PyInstaller via `decision-swarm.spec` (small ~20 MB launchers; weights resolve from the
 shared cache).
+
+**Packs are descriptions; bundles are distributions.** A pack directory is small and
+never contains weights — the lockfile pins repo, revision, commit and digests, and the
+weights resolve from `~/.decision-swarm/models`. To hand a swarm to someone else, ship
+the bundle: `build` writes `<pack>.swarmpack.tar` (pack + weights) by default, and
+`export` does it for an existing pack. Unpack it anywhere and `serve --pack ./my-swarm`
+finds the adjacent `models/` directory with no extra flag and no network.
 
 ### Long-lived decisions (`serve`)
 

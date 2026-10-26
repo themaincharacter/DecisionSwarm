@@ -133,7 +133,7 @@ flowchart TB
   end
   subgraph pack["packs/my-swarm/ (generated)"]
     SJ["swarm.json<br/>the swarm description"]
-    LK["models.lock.json<br/>repo · revision · sha256"]
+    LK["models.lock.json<br/>repo · revision · commit · sha256"]
     RT["runtime/<br/>pip-installable, embeds swarm.json"]
     RM["README.md"]
   end
@@ -141,16 +141,21 @@ flowchart TB
     MODELS["models/REPO/REVISION/"]
     ENVSD["envs/PACKAGE_SOURCE_HASH/"]
   end
+  BUNDLE["my-swarm.swarmpack.tar<br/>pack + models/ → shippable"]
   REGF --> SJ
   SRC --> RT
   TMPL --> RT
   SJ -.->|"resolved at run time"| MODELS
   LK -.->|"verified against"| MODELS
   RT -.->|"needs"| ENVSD
+  MODELS -->|"export copies"| BUNDLE
+  pack --> BUNDLE
 ```
 
 **The pack is a description, not a payload.** Weights and envs live outside it,
-shared by every pack on the machine.
+shared by every pack on the machine. `export` produces the one artifact that *does*
+carry weights — a bundle — and unpacking it puts a `models/` directory beside the pack,
+which `serve`/`run` pick up automatically.
 
 ## 5. Who owns what
 
@@ -159,7 +164,8 @@ Four words that are easy to conflate; each answers a different question.
 | Layer | Question it answers | Where it lives | Chosen when | Language |
 |---|---|---|---|---|
 | **Engine** | "What computes the answers?" | `src/decision_swarm/` | never — it *is* the program | Python only |
-| **Pack** | "Which cells, views, questions?" | `packs/<name>/` | Submit | data |
+| **Pack** | "Which cells, views, questions, and which models?" | `packs/<name>/` | Submit | data |
+| **Bundle** | "How does it travel?" | `<pack>.swarmpack.tar` | Submit (`--export`, on by default) | data |
 | **Transport** | "How does a consumer reach a warm swarm?" | `serve` (stdio today) | at `serve` start | n/a |
 | **Runtime** | "How does a *Python* consumer get a command/import?" | pack's `runtime/` | always generated today | Python |
 | **Client** | "How does *my* code call it?" | the consumer's repo | by the consumer | any |

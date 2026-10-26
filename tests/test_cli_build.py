@@ -124,6 +124,37 @@ def test_build_json_summary_matches_the_cells(
     assert all(model["cached"] is False for model in summary["models"])
 
 
+def test_build_bundles_the_pack_and_weights_by_default(
+    manifest_file: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    downloader = FakeDownloader()
+    monkeypatch.setattr(cache, "hub_download", downloader)
+    swarm = manifest_mod.parse_manifest(BROWSER_SWARM)
+    for entry in pack.unique_entries(swarm):
+        cache.fetch(entry, root=tmp_path / "cache", downloader=downloader)
+    dest = tmp_path / "my-swarm"
+
+    assert _build(dest, manifest_file, "--json") == 0
+
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["bundle"] == str(tmp_path / "my-swarm.swarmpack.tar")
+    assert (tmp_path / "my-swarm.swarmpack.tar").is_file()
+
+
+def test_build_without_export_writes_only_the_pack(
+    manifest_file: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    dest = tmp_path / "my-swarm"
+
+    assert _build(dest, manifest_file, "--no-export") == 0
+
+    assert dest.is_dir()
+    assert not (tmp_path / "my-swarm.swarmpack.tar").exists()
+
+
 def test_build_reports_invalid_manifests(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

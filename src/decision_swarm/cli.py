@@ -12,9 +12,28 @@ import json
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict
+from pathlib import Path
 
 from decision_swarm import __version__, cache, envs, manifest, pack, query, registry
 from decision_swarm.runtime import loaders, orchestrator, serve, worker
+
+
+def _models_root(args: argparse.Namespace) -> str | Path | None:
+    """``--models-dir``, else a ``models/`` directory bundled beside the pack.
+
+    An exported bundle carries its weights next to the pack, so unpacking one is
+    enough: no shared cache and no extra flag.
+    """
+    explicit = getattr(args, "models_dir", None)
+    if explicit:
+        return explicit
+    pack_arg = getattr(args, "pack", None)
+    if pack_arg:
+        pack_dir = Path(pack_arg)
+        bundled = pack_dir / pack.BUNDLED_MODELS_DIR
+        if pack_dir.is_dir() and bundled.is_dir():
+            return bundled
+    return None
 
 
 def _add_pack_argument(parser: argparse.ArgumentParser) -> None:
@@ -41,7 +60,8 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
     """Print cells, models, sizes, and cache status for a pack."""
     swarm = manifest.load_manifest(args.pack)
     entries = registry.load_registry()
-    models = pack.collect_models(swarm, models_root=args.models_dir, registry_entries=entries)
+    models_root = _models_root(args)
+    models = pack.collect_models(swarm, models_root=models_root, registry_entries=entries)
     print(f"pack: {swarm.name}")
     print("views: " + ", ".join(f"{view.name} ({view.type})" for view in swarm.views))
     print("cells:")
@@ -57,7 +77,7 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
         estimate = f"~{model.download_bytes // 1_000_000} MB" if model.download_bytes else "?"
         cached = f"yes ({model.bytes} bytes)" if model.cached else "no"
         print(f"  {model.id}  {checkpoint}  {model.params or '?'}  {estimate}  cached: {cached}")
-    print(f"cache: {cache.models_dir(args.models_dir)}")
+    print(f"cache: {cache.models_dir(models_root)}")
     return 0
 
 
@@ -111,7 +131,7 @@ def _require_cached(
         return
     missing = [
         model.id
-        for model in pack.collect_models(swarm, models_root=args.models_dir, registry_entries=entries)
+        for model in pack.collect_models(swarm, models_root=_models_root(args), registry_entries=entries)
         if not model.cached
     ]
     if missing:
@@ -129,7 +149,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
         payload,
         registry_entries=entries,
         envs_root=args.envs_dir,
-        models_root=args.models_dir,
+        models_root=_models_root(args),
     )
     if args.pretty:
         _print_pretty(result)
@@ -147,7 +167,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         swarm,
         registry_entries=entries,
         envs_root=args.envs_dir,
-        models_root=args.models_dir,
+        models_root=_models_root(args),
     )
     print(f"serving {swarm.name}: {len(swarm.cells)} cells over stdio", file=sys.stderr)
     with orchestrator.Swarm(plans) as warm:
@@ -172,8 +192,21 @@ def _cmd_build(args: argparse.Namespace) -> int:
         registry_entries=entries,
         models=models,
     )
+
+    bundle: str | None = None
+    if args.export:
+        try:
+            bundle = str(pack.export_bundle(dest, models_root=args.models_dir))
+        except pack.PackError as exc:
+            print(
+                f"decision-swarm: warning: no bundle written: {exc} "
+                "(the pack directory itself is complete)",
+                file=sys.stderr,
+            )
+
     summary = {
         "pack": str(dest),
+        "bundle": bundle,
         "name": swarm.name,
         "cells": [cell.id for cell in swarm.cells],
         "models": [
@@ -196,6 +229,15 @@ def _cmd_build(args: argparse.Namespace) -> int:
         for model in models:
             state = "cached" if model.cached else "not cached"
             print(f"  {model.id}  {state}  ({model.bytes} bytes)")
+        if bundle:
+            print(f"bundle  {bundle}  (pack + weights)")
+    return 0
+
+
+def _cmd_export(args: argparse.Namespace) -> int:
+    """Bundle a pack and the weights it pins into one transferable tar."""
+    dest = pack.export_bundle(args.pack, args.dest, models_root=_models_root(args))
+    print(f"bundled  {dest}  ({dest.stat().st_size} bytes)")
     return 0
 
 
@@ -285,8 +327,33 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="do not resolve model revisions to commits (skips the Hub lookup)",
     )
+    build_parser.add_argument(
+        "--export",
+        dest="export",
+        action="store_true",
+        default=True,
+        help="also bundle the pack with its weights into <dest>.swarmpack.tar (default)",
+    )
+    build_parser.add_argument(
+        "--no-export",
+        dest="export",
+        action="store_false",
+        help="write only the pack directory, without the transferable bundle",
+    )
     build_parser.add_argument("--json", action="store_true", help="print a machine-readable summary")
     build_parser.set_defaults(handler=_cmd_build)
+
+    export_parser = subparsers.add_parser(
+        "export", help="bundle a pack and its weights into one transferable tar"
+    )
+    _add_pack_argument(export_parser)
+    _add_models_dir_argument(export_parser)
+    export_parser.add_argument(
+        "--dest",
+        metavar="FILE",
+        help="bundle path (default: <pack>.swarmpack.tar beside the pack directory)",
+    )
+    export_parser.set_defaults(handler=_cmd_export)
 
     models_parser = subparsers.add_parser("models", help="list known models from the registry")
     models_parser.add_argument("--json", action="store_true", help="print the registry as JSON")

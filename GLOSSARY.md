@@ -34,17 +34,22 @@ _Avoid_: prediction, output, result
 ## Artifacts
 
 **Pack**:
-The build artifact describing one swarm: its cells, its models, and what a consumer
-needs in order to run it.
+The build artifact describing one swarm: its cells, the models it pins, and the runtime
+that serves it. A pack never contains model weights.
 _Avoid_: bundle, artifact, project
+
+**Bundle**:
+A pack together with the weights it pins, packed as one file so it can be handed to
+someone who has no model cache.
+_Avoid_: archive, tarball, dist
 
 **Manifest**:
 A pack's description of the swarm itself: views, cells, and questions.
 _Avoid_: config, spec
 
 **Lockfile**:
-A pack's record of exactly which model revisions it expects, so a run can be verified
-rather than guessed.
+A pack's record of exactly which model revisions, commits, and digests it expects, so a
+run can be verified rather than guessed.
 _Avoid_: requirements, pin file
 
 **Model registry**:

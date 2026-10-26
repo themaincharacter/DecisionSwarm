@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import json
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -208,6 +209,55 @@ def test_lockfile_records_the_commit(
 
     lock = json.loads((dest / "models.lock.json").read_text(encoding="utf-8"))
     assert {model["commit"] for model in lock["models"]} == {"deadbeef"}
+
+
+def _seed_cache(root: Path, swarm: manifest_mod.SwarmManifest) -> None:
+    """Plant checkpoint files where ``cache.fetch`` would leave them."""
+    for entry in pack.unique_entries(swarm):
+        snapshot = root / (entry.hf_repo or "") / (entry.revision or "")
+        target = snapshot / entry.subfolder if entry.subfolder else snapshot
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "config.json").write_text("{}", encoding="utf-8")
+
+
+def test_export_bundle_carries_the_pack_and_its_weights(
+    tmp_path: Path, swarm: manifest_mod.SwarmManifest
+) -> None:
+    cache_root = tmp_path / "cache"
+    _seed_cache(cache_root, swarm)
+    dest = pack.build_pack(swarm, tmp_path / "my-swarm", models_root=cache_root)
+
+    bundle = pack.export_bundle(dest, models_root=cache_root)
+
+    assert bundle == tmp_path / "my-swarm.swarmpack.tar"
+    with tarfile.open(bundle) as archive:
+        names = set(archive.getnames())
+    assert "my-swarm/swarm.json" in names
+    assert "my-swarm/models.lock.json" in names
+    assert "my-swarm/models/convaiinnovations/laya/main/config.json" in names
+    assert "my-swarm/models/thaitea/laya-vision/main/config.json" in names
+
+
+def test_export_bundle_refuses_a_cold_cache(
+    tmp_path: Path, swarm: manifest_mod.SwarmManifest
+) -> None:
+    dest = pack.build_pack(swarm, tmp_path / "my-swarm", models_root=tmp_path / "cache")
+
+    with pytest.raises(pack.PackError, match="not in the cache"):
+        pack.export_bundle(dest, models_root=tmp_path / "cache")
+    assert not (tmp_path / "my-swarm.swarmpack.tar").exists()
+
+
+def test_export_bundle_accepts_an_explicit_destination(
+    tmp_path: Path, swarm: manifest_mod.SwarmManifest
+) -> None:
+    cache_root = tmp_path / "cache"
+    _seed_cache(cache_root, swarm)
+    dest = pack.build_pack(swarm, tmp_path / "my-swarm", models_root=cache_root)
+
+    bundle = pack.export_bundle(dest, tmp_path / "out" / "ship.tar", models_root=cache_root)
+
+    assert bundle == tmp_path / "out" / "ship.tar" and bundle.is_file()
 
 
 def test_helpers_derive_names() -> None:
