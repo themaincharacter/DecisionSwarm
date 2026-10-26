@@ -1,94 +1,27 @@
-"""Command line for the {{PACK_NAME}} swarm pack."""
+"""Command line for the {{PACK_NAME}} swarm pack.
+
+Thin shim: this package embeds the pack's manifest, so every command delegates to
+the engine with that manifest. One implementation, no drift from `decision-swarm`.
+"""
 
 from __future__ import annotations
 
-import argparse
-import json
 import sys
 from collections.abc import Sequence
 
-from decision_swarm import cache, envs, query, registry
-from decision_swarm.manifest import ManifestError
-from decision_swarm.runtime.loaders import LoaderError
-from decision_swarm.runtime.orchestrator import OrchestratorError, Swarm, plan_cells, run as run_swarm
-from decision_swarm.runtime.serve import serve_loop
+from decision_swarm.cli import main as cli_main
 
-from {{PACK_MODULE}} import load_manifest
+from {{PACK_MODULE}} import MANIFEST_PATH
 
-EXPECTED_ERRORS = (
-    ManifestError,
-    query.QueryError,
-    registry.RegistryError,
-    cache.CacheError,
-    envs.EnvError,
-    LoaderError,
-    OrchestratorError,
-)
-
-
-def _add_cache_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--models-dir",
-        metavar="DIR",
-        help="model cache location (default: ~/.decision-swarm/models, or $DECISION_SWARM_MODELS)",
-    )
-    parser.add_argument(
-        "--envs-dir",
-        metavar="DIR",
-        help="env location (default: ~/.decision-swarm/envs, or $DECISION_SWARM_ENVS)",
-    )
-
-
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="{{PACK_SLUG}}",
-        description="Run the {{PACK_NAME}} swarm pack.",
-    )
-    subparsers = parser.add_subparsers(dest="command", metavar="<command>", required=True)
-    subparsers.add_parser("inspect", help="list this pack's cells")
-    run_parser = subparsers.add_parser("run", help="run the pack against an observation")
-    run_parser.add_argument("--input", required=True, metavar="FILE", help="observation payload (JSON)")
-    _add_cache_arguments(run_parser)
-    serve_parser = subparsers.add_parser(
-        "serve", help="long-lived decision service: JSONL queries over stdio"
-    )
-    _add_cache_arguments(serve_parser)
-    return parser
-
-
-def _cmd_run(args: argparse.Namespace) -> int:
-    manifest = load_manifest()
-    payload = query.load_query(args.input, manifest)
-    result = run_swarm(manifest, payload, models_root=args.models_dir, envs_root=args.envs_dir)
-    print(json.dumps(result.to_dict(), indent=2))
-    return 0
-
-
-def _cmd_serve(args: argparse.Namespace) -> int:
-    manifest = load_manifest()
-    plans = plan_cells(manifest, models_root=args.models_dir, envs_root=args.envs_dir)
-    with Swarm(plans) as warm:
-        return serve_loop(warm, manifest)
+COMMANDS = ("inspect", "run", "serve")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
-    try:
-        return _dispatch(args)
-    except EXPECTED_ERRORS as exc:
-        print("{{PACK_SLUG}}: error: " + str(exc), file=sys.stderr)
-        return 1
-
-
-def _dispatch(args: argparse.Namespace) -> int:
-    manifest = load_manifest()
-    if args.command == "inspect":
-        for cell in manifest.cells:
-            print(f"{cell.id}: {cell.model} [{', '.join(cell.views)}]")
-        return 0
-    if args.command == "run":
-        return _cmd_run(args)
-    return _cmd_serve(args)
+    args = list(sys.argv[1:] if argv is None else argv)
+    if not args or args[0] not in COMMANDS:
+        print("{{PACK_SLUG}}: expected one of: " + ", ".join(COMMANDS), file=sys.stderr)
+        return 2
+    return cli_main([args[0], "--pack", str(MANIFEST_PATH), *args[1:]])
 
 
 if __name__ == "__main__":
