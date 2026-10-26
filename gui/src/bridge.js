@@ -117,15 +117,16 @@ export async function downloadModels(manifestJson, modelsDir = null, onLine = ()
   return "ok";
 }
 
-export async function submitPack(manifestJson, dest, modelsDir = null) {
+export async function submitPack(manifestJson, dest, modelsDir = null, exportBundle = true) {
   if (isTauri) {
-    const raw = await invoke("submit_pack", { manifestJson, dest, modelsDir });
+    const raw = await invoke("submit_pack", { manifestJson, dest, modelsDir, exportBundle });
     return JSON.parse(raw);
   }
   await new Promise((resolve) => setTimeout(resolve, 250));
   const manifest = JSON.parse(manifestJson);
   return {
     pack: dest,
+    bundle: exportBundle ? `${dest}.swarmpack.tar` : null,
     name: manifest.name,
     cells: manifest.cells.map((cell) => cell.id),
     models: [],

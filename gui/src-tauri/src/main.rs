@@ -159,12 +159,13 @@ fn download_models(
     Ok(collected)
 }
 
-/// Submit: validate the config and write the swarm pack.
+/// Submit: validate the config and write the swarm pack (plus its weight bundle).
 #[tauri::command]
 fn submit_pack(
     manifest_json: String,
     dest: String,
     models_dir: Option<String>,
+    export_bundle: Option<bool>,
 ) -> Result<String, String> {
     let manifest_path = write_temp_manifest(&manifest_json)?;
     let mut args = vec![
@@ -178,6 +179,9 @@ fn submit_pack(
     if let Some(dir) = models_dir {
         args.push("--models-dir".to_string());
         args.push(dir);
+    }
+    if export_bundle == Some(false) {
+        args.push("--no-export".to_string());
     }
     run_cli(&args)
 }

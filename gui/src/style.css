@@ -307,6 +307,20 @@ td.warn {
   margin: 12px 0 8px;
 }
 
+.bundle-option {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: help;
+}
+
+.bundle-option input {
+  margin: 0;
+}
+
 progress {
   width: 100%;
   height: 8px;

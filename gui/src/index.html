@@ -48,6 +48,12 @@
           <button id="download-models" type="button">Download models</button>
           <button id="submit-pack" type="button">Submit pack</button>
         </div>
+        <label class="bundle-option">
+          <input id="submit-export" type="checkbox" checked />
+          <span
+            title="Also writes &lt;pack&gt;.swarmpack.tar next to the pack: the pack plus the downloaded model weights, so it can be handed to someone else who has no model cache. Requires Download first; the bundle is several GB. Uncheck to produce only the small pack directory."
+          >Bundle model weights into a transferable .tar</span>
+        </label>
         <progress id="download-progress" max="1" value="0"></progress>
         <div id="engine-log" class="log" role="log"></div>
       </section>

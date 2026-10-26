@@ -397,10 +397,19 @@ async function handleSubmit() {
     return;
   }
   const dest = $("#submit-dest").value.trim();
+  const exportBundle = $("#submit-export").checked;
   appendLog(`Submitting pack to ${dest}…`);
   try {
-    const summary = await submitPack(JSON.stringify(toManifest(state, models)), dest, null);
+    const summary = await submitPack(JSON.stringify(toManifest(state, models)), dest, null, exportBundle);
     appendLog(`Built ${summary.pack} — cells: ${(summary.cells || []).join(", ")}`);
+    if (summary.bundle) {
+      appendLog(`Bundled pack + weights → ${summary.bundle}`);
+    } else if (exportBundle) {
+      appendLog(
+        "No bundle written: the models are not in the cache yet. Pack the swarm first with Download, then Submit again (the pack directory itself is complete).",
+        "error"
+      );
+    }
   } catch (error) {
     appendLog(`Submit failed: ${error}`, "error");
   }
