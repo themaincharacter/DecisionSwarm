@@ -172,6 +172,44 @@ def test_build_is_idempotent(tmp_path: Path, swarm: manifest_mod.SwarmManifest) 
     ).read_text(encoding="utf-8")
 
 
+def test_collect_models_records_a_resolved_commit(
+    tmp_path: Path, swarm: manifest_mod.SwarmManifest
+) -> None:
+    models = pack.collect_models(
+        swarm,
+        models_root=tmp_path / "cache",
+        resolve_commit=lambda entry: f"sha-{entry.id}",
+    )
+
+    assert [model.commit for model in models] == [
+        "sha-laya-vision",
+        "sha-laya-english",
+    ]
+    # the floating ref survives, so a reader can see what was pinned
+    assert {model.revision for model in models} == {"main"}
+
+
+def test_collect_models_leaves_commits_unset_without_a_resolver(
+    tmp_path: Path, swarm: manifest_mod.SwarmManifest
+) -> None:
+    models = pack.collect_models(swarm, models_root=tmp_path / "cache")
+    assert all(model.commit is None for model in models)
+
+
+def test_lockfile_records_the_commit(
+    tmp_path: Path, swarm: manifest_mod.SwarmManifest
+) -> None:
+    dest = pack.build_pack(
+        swarm,
+        tmp_path / "my-swarm",
+        models_root=tmp_path / "cache",
+        resolve_commit=lambda entry: "deadbeef",
+    )
+
+    lock = json.loads((dest / "models.lock.json").read_text(encoding="utf-8"))
+    assert {model["commit"] for model in lock["models"]} == {"deadbeef"}
+
+
 def test_helpers_derive_names() -> None:
     assert pack.pack_slug("Browser Swarm!") == "browser-swarm"
     assert pack.pack_module("Browser Swarm!") == "browser_swarm"

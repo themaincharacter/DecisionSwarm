@@ -158,8 +158,20 @@ def _cmd_build(args: argparse.Namespace) -> int:
     """Build a swarm pack from a manifest (what the GUI's Submit calls)."""
     swarm = manifest.load_manifest(args.manifest)
     entries = registry.load_registry()
-    dest = pack.build_pack(swarm, args.dest, models_root=args.models_dir, registry_entries=entries)
-    models = pack.collect_models(swarm, models_root=args.models_dir, registry_entries=entries)
+    resolver = None if args.no_pin else pack.hub_commit_resolver
+    models = pack.collect_models(
+        swarm,
+        models_root=args.models_dir,
+        registry_entries=entries,
+        resolve_commit=resolver,
+    )
+    dest = pack.build_pack(
+        swarm,
+        args.dest,
+        models_root=args.models_dir,
+        registry_entries=entries,
+        models=models,
+    )
     summary = {
         "pack": str(dest),
         "name": swarm.name,
@@ -170,6 +182,7 @@ def _cmd_build(args: argparse.Namespace) -> int:
                 "hf_repo": model.hf_repo,
                 "subfolder": model.subfolder,
                 "revision": model.revision,
+                "commit": model.commit,
                 "cached": model.cached,
                 "bytes": model.bytes,
             }
@@ -267,6 +280,11 @@ def build_parser() -> argparse.ArgumentParser:
     build_parser.add_argument("--manifest", required=True, metavar="FILE", help="path to swarm.json")
     build_parser.add_argument("--dest", required=True, metavar="DIR", help="pack output directory")
     _add_models_dir_argument(build_parser)
+    build_parser.add_argument(
+        "--no-pin",
+        action="store_true",
+        help="do not resolve model revisions to commits (skips the Hub lookup)",
+    )
     build_parser.add_argument("--json", action="store_true", help="print a machine-readable summary")
     build_parser.set_defaults(handler=_cmd_build)
 

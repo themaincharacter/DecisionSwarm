@@ -19,6 +19,56 @@ def manifest_file(tmp_path: Path) -> Path:
     return path
 
 
+@pytest.fixture(autouse=True)
+def _no_hub_lookups(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`build` pins revisions by asking the Hub; tests must stay offline."""
+    monkeypatch.setattr(pack, "hub_commit_resolver", lambda entry: "0" * 40)
+
+
+def _build(dest: Path, manifest_file: Path, *extra: str) -> int:
+    return cli.main(
+        [
+            "build",
+            "--manifest",
+            str(manifest_file),
+            "--dest",
+            str(dest),
+            "--models-dir",
+            str(dest.parent / "cache"),
+            *extra,
+        ]
+    )
+
+
+def test_build_pins_each_revision_to_a_commit(
+    manifest_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(pack, "hub_commit_resolver", lambda entry: "abc123")
+    dest = tmp_path / "my-swarm"
+
+    assert _build(dest, manifest_file, "--json") == 0
+    lock = json.loads((dest / "models.lock.json").read_text(encoding="utf-8"))
+
+    assert [model["commit"] for model in lock["models"]] == ["abc123"] * 3
+    assert {model["revision"] for model in lock["models"]} == {"main"}
+    summary = json.loads(capsys.readouterr().out)
+    assert {model["commit"] for model in summary["models"]} == {"abc123"}
+
+
+def test_build_no_pin_skips_the_hub_lookup(
+    manifest_file: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def boom(entry: object) -> str:
+        raise AssertionError("--no-pin must not resolve revisions")
+
+    monkeypatch.setattr(pack, "hub_commit_resolver", boom)
+    dest = tmp_path / "my-swarm"
+
+    assert _build(dest, manifest_file, "--no-pin") == 0
+    lock = json.loads((dest / "models.lock.json").read_text(encoding="utf-8"))
+    assert all(model["commit"] is None for model in lock["models"])
+
+
 def test_build_creates_a_runnable_pack(
     manifest_file: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

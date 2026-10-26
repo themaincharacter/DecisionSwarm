@@ -1,16 +1,19 @@
 """Pack builder — what the GUI's Submit emits.
 
 A swarm pack directory contains ``swarm.json`` (manifest), ``models.lock.json``
-(repo + revision + sha256 per unique checkpoint), a generated ``runtime/``
-package and a README with usage for the pack. Templates for the generated
-runtime live in ``templates/runtime/``.
+(repo + revision + commit + sha256 per unique checkpoint), a generated
+``runtime/`` package and a README with usage for the pack. Templates for the
+generated runtime live in ``templates/runtime/``.
+
+The lockfile *pins* the models a pack expects but never contains their weights:
+a pack ships as a description, and weights resolve from the shared cache.
 """
 
 from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,6 +38,9 @@ TEMPLATES_RELATIVE_PATH = ("templates", "runtime")
 TEMPLATES_BUNDLED_PATH = ("data", "templates", "runtime")
 """Template copy bundled into wheels and frozen executables."""
 
+CommitResolver = Callable[[registry.ModelEntry], "str | None"]
+"""Resolves a registry entry's floating revision (e.g. ``main``) to a commit sha."""
+
 
 class PackError(RuntimeError):
     """Raised when a pack cannot be built."""
@@ -53,6 +59,26 @@ class PackModel:
     sha256: Mapping[str, str]
     params: str | None = None
     download_bytes: int | None = None
+    commit: str | None = None
+
+
+def hub_commit_resolver(entry: registry.ModelEntry) -> str | None:
+    """Ask the Hub which commit ``entry.revision`` points at right now.
+
+    Never fails a build: offline, missing repos and auth problems all resolve to
+    ``None``, which the lockfile records as "unpinned".
+    """
+    if not entry.hf_repo:
+        return None
+    try:
+        from huggingface_hub import HfApi
+
+        info = HfApi().model_info(entry.hf_repo, revision=entry.revision or "main")
+    except Exception:  # noqa: BLE001 - a cold/offline build must still succeed
+        return None
+    sha = getattr(info, "sha", None)
+    return sha if isinstance(sha, str) and sha else None
+
 
 
 def pack_slug(name: str) -> str:
@@ -108,11 +134,14 @@ def collect_models(
     *,
     models_root: str | Path | None = None,
     registry_entries: Mapping[str, registry.ModelEntry] | None = None,
+    resolve_commit: CommitResolver | None = None,
 ) -> list[PackModel]:
     """One lock record per unique checkpoint (repo + revision + subfolder).
 
     Digests come from the shared cache (read-only: nothing is downloaded);
     uncached checkpoints are recorded with ``cached: False`` and no digests.
+    With ``resolve_commit`` set, the floating revision is resolved to the commit
+    it points at, so the lockfile pins something reproducible.
     """
     models: list[PackModel] = []
     for entry in unique_entries(manifest, registry_entries=registry_entries):
@@ -122,6 +151,7 @@ def collect_models(
             size, digests = result.bytes, dict(result.sha256)
         except cache.CacheError:
             cached, size, digests = False, 0, {}
+        commit = resolve_commit(entry) if resolve_commit is not None else None
         models.append(
             PackModel(
                 id=entry.id,
@@ -133,6 +163,7 @@ def collect_models(
                 sha256=digests,
                 params=entry.params,
                 download_bytes=entry.download_bytes,
+                commit=commit,
             )
         )
     return models
@@ -211,17 +242,27 @@ def build_pack(
     models_root: str | Path | None = None,
     registry_entries: Mapping[str, registry.ModelEntry] | None = None,
     templates_dir: str | Path | None = None,
+    resolve_commit: CommitResolver | None = None,
+    models: list[PackModel] | None = None,
 ) -> Path:
     """Build a swarm pack directory: swarm.json, models.lock.json, runtime/, README.md.
 
     Nothing is downloaded: the lockfile reads digests from the shared cache.
+    ``resolve_commit`` opts into recording the commit each revision points at;
+    pass ``models`` to reuse an already-collected lock record list.
     """
     pack_dir = Path(dest)
     pack_dir.mkdir(parents=True, exist_ok=True)
 
     save_manifest(manifest, pack_dir / MANIFEST_NAME)
 
-    models = collect_models(manifest, models_root=models_root, registry_entries=registry_entries)
+    if models is None:
+        models = collect_models(
+            manifest,
+            models_root=models_root,
+            registry_entries=registry_entries,
+            resolve_commit=resolve_commit,
+        )
     lock = {
         "schema_version": LOCKFILE_SCHEMA_VERSION,
         "models": [
@@ -230,6 +271,7 @@ def build_pack(
                 "hf_repo": model.hf_repo,
                 "subfolder": model.subfolder,
                 "revision": model.revision,
+                "commit": model.commit,
                 "params": model.params,
                 "download_bytes": model.download_bytes,
                 "cached": model.cached,
