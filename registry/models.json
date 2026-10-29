@@ -49,9 +49,9 @@
       "package_source": "git+https://github.com/r33drichards/laya-vision",
       "loader": "load_vlm",
       "params": "201M",
-      "download_bytes": 804000000,
+      "download_bytes": 808285067,
       "license": "weights: CC BY-NC-SA 4.0 / code: Apache-2.0",
-      "notes": "SmolVLM-256M backbone cut to 20 language layers, ~41 ms/image. download_bytes is an estimate (F32 weights); fetch records exact sizes in models.lock.json. The laya-vision fork installs its own 'laya' package (cannot coexist with PyPI laya) and needs torchvision and transformers>=5.3: use per-package envs."
+      "notes": "SmolVLM-256M backbone cut to 20 language layers, ~41 ms/image. download_bytes is the measured snapshot size (whole repo at revision main, all files); fetch records exact sizes in models.lock.json. The laya-vision fork installs its own 'laya' package (cannot coexist with PyPI laya) and needs torchvision and transformers>=5.3: use per-package envs."
     },
     {
       "id": "laya-vision-237m",
