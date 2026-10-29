@@ -691,8 +691,12 @@ class AgentTools:
             job.result = {"bundle": str(bundle), "bytes": bundle.stat().st_size}
             job.state = "done"
 
+        # The receipt is the state at submission: read it before the thread can
+        # run, or a fast failure (e.g. a cold cache) lands before the read and
+        # the caller is told "error" for a job it has not polled yet.
+        receipt = {"job_id": job.id, "kind": job.kind, "state": job.state, "pack": str(pack_dir)}
         threading.Thread(target=run, name=job.id, daemon=True).start()
-        return {"job_id": job.id, "kind": job.kind, "state": job.state, "pack": str(pack_dir)}
+        return receipt
 
     def job_status(self, args: Mapping[str, Any]) -> dict[str, Any]:
         job_id = str(args.get("job_id"))
