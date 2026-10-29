@@ -52,14 +52,18 @@ class ModelSpec:
         """The cached snapshot directory, when the checkpoint is really there.
 
         Mirrors the cache layout (``<models-dir>/<repo>/<revision>/`` plus the
-        optional subfolder) and requires a ``config.json`` so a half-downloaded
+        optional subfolder).  The marker is ``rl_agent_config.json`` for laya
+        checkpoints (what ``laya.train.resolve_checkpoint_dir`` requires) or
+        ``config.json`` for generic HF checkpoints, so a half-downloaded
         directory falls back to the Hub instead of failing to load.
         """
         if not (self.models_dir and self.hf_repo and self.revision):
             return None
         snapshot = Path(self.models_dir) / self.hf_repo / self.revision
         target = snapshot / self.subfolder if self.subfolder else snapshot
-        return target if (target / "config.json").is_file() else None
+        if (target / "rl_agent_config.json").is_file() or (target / "config.json").is_file():
+            return target
+        return None
 
 
 

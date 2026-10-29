@@ -156,11 +156,16 @@ def unique_entries(
     *,
     registry_entries: Mapping[str, registry.ModelEntry] | None = None,
 ) -> list[registry.ModelEntry]:
-    """Unique model entries used by the manifest's cells, in cell order."""
+    """Unique model entries used by the manifest's cells, in cell order.
+
+    A cell with an adapter runs the merged checkpoint, so that is the entry its
+    lockfile record and bundle copy describe (the base is only needed to
+    materialize it, which ``fetch``/``install`` do).
+    """
     seen: set[tuple[str, str, str | None]] = set()
     entries: list[registry.ModelEntry] = []
     for cell in manifest.cells:
-        entry = registry.resolve_model(cell.model, registry_entries)
+        entry = registry.resolve_checkpoint(cell, registry_entries)
         key = (entry.hf_repo or "", entry.revision or "", entry.subfolder)
         if key in seen:
             continue

@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from decision_swarm.registry import ModelEntry
+from decision_swarm.registry import MERGED_PREFIX, ModelEntry
 
 MODELS_DIR_ENV = "DECISION_SWARM_MODELS"
 """Environment variable overriding the cache location."""
@@ -223,6 +223,11 @@ def fetch(
             bytes=int(record.get("bytes", 0)),
             sha256=dict(record.get("files", {})),
         )
+    if (entry.hf_repo or "").startswith(MERGED_PREFIX):
+        raise CacheError(
+            f"{entry.id!r} is a merged checkpoint that is not materialized at {directory}; "
+            "run 'decision-swarm install' (it merges the base with the cell's adapter)"
+        )
     if offline:
         raise CacheError(
             f"{entry.id!r} is not in the cache at {directory} and offline was requested; "
@@ -238,3 +243,20 @@ def fetch(
     marker["sets"][set_key] = {"bytes": total, "files": hashes}
     _write_marker(directory, entry, marker["sets"])
     return FetchResult(entry=entry, path=directory, downloaded=True, bytes=total, sha256=hashes)
+
+
+def record_local(entry: ModelEntry, root: str | Path | None = None) -> FetchResult:
+    """Hash and mark an already-materialized content set (merged checkpoints).
+
+    ``adapt merge`` writes the checkpoint first; this records it so
+    ``is_cached``/``status``/``verify`` and export treat it like any snapshot.
+    """
+    directory = snapshot_dir(entry, root)
+    if not directory.is_dir():
+        raise CacheError(f"nothing to record at {directory}")
+    set_key = content_set(entry)
+    total, hashes = _hash_files(directory, set_key)
+    marker = _read_marker(directory)
+    marker["sets"][set_key] = {"bytes": total, "files": hashes}
+    _write_marker(directory, entry, marker["sets"])
+    return FetchResult(entry=entry, path=directory, downloaded=False, bytes=total, sha256=hashes)

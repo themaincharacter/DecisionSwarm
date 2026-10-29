@@ -73,7 +73,12 @@ def plan_cells(
     models_dir = cache.models_dir(models_root)
     plans: list[CellPlan] = []
     for cell in swarm.cells:
-        entry = registry.resolve_model(cell.model, registry_entries)
+        entry = registry.resolve_checkpoint(cell, registry_entries)
+        if (entry.hf_repo or "").startswith(registry.MERGED_PREFIX) and not cache.is_cached(entry, models_root):
+            raise OrchestratorError(
+                f"cell {cell.id!r}: the merged checkpoint for its adapter is not materialized; "
+                "run 'decision-swarm install'"
+            )
         package_source, loader = registry.resolve_runtime(cell, registry_entries)
         if not loader:
             raise OrchestratorError(f"cell {cell.id!r} has no loader; set cell.runtime or use a registry model")

@@ -61,6 +61,33 @@ _Avoid_: index, catalog
 The machine-wide store of downloaded checkpoints, shared by every pack.
 _Avoid_: store, models folder
 
+## Adapting a model
+
+**Base model**:
+A decision model named by the user as the starting point for specialization — always a
+registry base checkpoint, never a merged checkpoint.
+_Avoid_: backbone, foundation model, original
+
+**Adapter**:
+A small set of trained weight deltas (LoRA) attached to one base model, plus its
+training provenance; a cell attaches at most one.
+_Avoid_: fine-tune, tweak, patch
+
+**Specialization**:
+The process of training an adapter so a base model gets better at one named task ("X"),
+measured before and after on that task's slice.
+_Avoid_: fine-tuning run, customization
+
+**Slice**:
+A named subset of an evaluation set, used to measure whether a specialization actually
+improved the behavior it targeted.
+_Avoid_: split, segment, category
+
+**Decision model**:
+A model that answers typed questions — choice, score, yes/no — about one observation
+with calibrated confidence; the family of models this tool swarms.
+_Avoid_: classifier, predictor, policy
+
 ## Consuming a swarm
 
 **Engine**:
@@ -84,7 +111,7 @@ _Avoid_: wrapper, SDK, client
 
 **Client**:
 Consumer-side code, in whatever language, that talks to a served swarm.
-_Avoid_: wrapper, binding, SDK, adapter
+_Avoid_: wrapper, binding, SDK, adapter (binding sense)
 
 **Agent**:
 A client that is a language model choosing tools, rather than a program written by

@@ -45,7 +45,7 @@ MODALITIES = ("text", "image+text")
 
 _SLUG_RE = re.compile(SLUG_PATTERN)
 _ROOT_FIELDS = {"schema_version", "name", "input_schema", "cells"}
-_CELL_FIELDS = {"id", "model", "modality", "views", "default_questions", "runtime"}
+_CELL_FIELDS = {"id", "model", "modality", "views", "default_questions", "runtime", "adapter"}
 _QUESTION_FIELDS = {"type", "instructions", "criteria"}
 _RUNTIME_FIELDS = {"package_source", "loader"}
 
@@ -92,6 +92,7 @@ class CellSpec:
     views: tuple[str, ...]
     default_questions: tuple[QuestionSpec, ...] = ()
     runtime: RuntimeSpec | None = None
+    adapter: str | None = None  # 0..1, never validated (Q9/Q10)
 
 
 @dataclass(frozen=True)
@@ -236,6 +237,10 @@ def _parse_cell(raw: Any, index: int, known_views: set[str], seen_ids: set[str])
         for name, question in raw_questions.items()
     )
 
+    adapter = raw.get("adapter")
+    if adapter is not None and (not isinstance(adapter, str) or not adapter.strip()):
+        raise _fail(f"{path}.adapter", "must be a non-empty string (a registered adapter id or local/<name>@<digest>)")
+
     return CellSpec(
         id=cell_id,
         model=_require_str(raw.get("model"), f"{path}.model"),
@@ -243,6 +248,7 @@ def _parse_cell(raw: Any, index: int, known_views: set[str], seen_ids: set[str])
         views=tuple(views),
         default_questions=questions,
         runtime=_parse_runtime(raw.get("runtime"), f"{path}.runtime") if "runtime" in raw else None,
+        adapter=adapter,
     )
 
 
@@ -304,6 +310,8 @@ def to_dict(manifest: SwarmManifest) -> dict[str, Any]:
                 "package_source": cell.runtime.package_source,
                 "loader": cell.runtime.loader,
             }
+        if cell.adapter is not None:
+            entry["adapter"] = cell.adapter
         cells.append(entry)
     return {
         "schema_version": manifest.schema_version,
