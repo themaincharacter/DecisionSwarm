@@ -94,6 +94,33 @@ function button(label, onClick, className = "mini") {
   return el("button", { type: "button", className, onClick }, label);
 }
 
+// Tooltip text for the cell editor's Adapter picker: how an adapter is packed
+// and consumed, and where the selector's entries come from.
+const ADAPTER_HELP =
+  "1 — Packed & consumed: an adapter is a small trained-weights directory " +
+  "(adapter.safetensors + adapter_config.json + optional questions.json) made by " +
+  "'decision-swarm adapt train' and registered with 'decision-swarm adapt register'. " +
+  "A cell runs a MERGED checkpoint: 'decision-swarm install' folds the adapter into " +
+  "its base model once, and the runtime loads that merged copy unchanged. " +
+  "One adapter per cell, only on the adapter's own base model.\n\n" +
+  "2 — Where this list comes from: the model registry 'decision-swarm models' reports " +
+  "(registry/models.json) — the kind: adapter entries 'adapt register' writes. " +
+  "\"custom ref…\" accepts the portable local/<name>@<digest> ref that register prints.";
+
+function helpIcon(tip) {
+  return el(
+    "span",
+    {
+      className: "help",
+      role: "img",
+      "aria-label": "help",
+      tabindex: "0",
+      dataset: { tip },
+    },
+    "?"
+  );
+}
+
 function modelLabel(model) {
   return model.custom ? `${model.id} (any HF repo)` : model.id;
 }
@@ -209,7 +236,8 @@ function cellCard(cell, index) {
           renderCells();
           renderValidation();
         }
-      )
+      ),
+      helpIcon(ADAPTER_HELP)
     ),
     cell.adapter === "custom-adapter-ref"
       ? textInput(cell.customAdapterRef, (value) => {
