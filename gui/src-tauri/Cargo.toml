@@ -1,6 +1,6 @@
 [package]
 name = "decision-swarm-gui"
-version = "0.6.0"
+version = "0.6.1"
 description = "Decision Swarm desktop app"
 edition = "2021"
 
