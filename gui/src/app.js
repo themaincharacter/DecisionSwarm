@@ -5,7 +5,7 @@
 // is never stolen.
 
 import { listModels, downloadModels, runningInTauri, submitPack } from "./bridge.js";
-import { clusterMetrics, toManifest, validateState } from "./manifest.js";
+import { adapterRef, clusterMetrics, toManifest, validateState } from "./manifest.js";
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -16,10 +16,23 @@ const state = {
   cells: [blankCell(0), blankCell(1)],
 };
 
+function modelChoices() {
+  // adapters are not models: they attach to one (the cell editor offers them
+  // in their own picker)
+  return models.filter((model) => model.kind !== "adapter");
+}
+
+function adapterChoices() {
+  return models.filter((model) => model.kind === "adapter");
+}
+
 function blankCell(index) {
+  const firstModel = modelChoices()[0];
   return {
     id: `cell_${index + 1}`,
-    model: models[0] ? models[0].id : "custom-hf-repo",
+    model: firstModel ? firstModel.id : "custom-hf-repo",
+    adapter: "",
+    customAdapterRef: "",
     customRepo: "",
     customModality: "text",
     customPackageSource: "",
@@ -105,7 +118,15 @@ function renderModelsTable() {
         "tr",
         { dataset: { modelId: model.id } },
         el("td", {}, model.id),
-        el("td", {}, model.hf_repo ? `${model.hf_repo}${model.subfolder ? `/${model.subfolder}` : ""}` : model.id),
+        el(
+          "td",
+          {},
+          model.kind === "adapter"
+            ? `adapter → ${model.base || "?"}`
+            : model.hf_repo
+              ? `${model.hf_repo}${model.subfolder ? `/${model.subfolder}` : ""}`
+              : model.id
+        ),
         el("td", {}, model.modality || "custom"),
         el("td", {}, model.params || "—"),
         el(
@@ -166,13 +187,42 @@ function cellCard(cell, index) {
       "label",
       { className: "field" },
       "Model ",
-      select(models.map((model) => [model.id, modelLabel(model)]), cell.model, (value) => {
+      select(modelChoices().map((model) => [model.id, modelLabel(model)]), cell.model, (value) => {
         cell.model = value;
         renderCells();
         renderValidation();
       })
     ),
     licenseLine(entry),
+    el(
+      "label",
+      { className: "field" },
+      "Adapter ",
+      select(
+        [["", "none"]].concat(
+          adapterChoices().map((adapter) => [adapter.id, `${adapter.id} → ${adapter.base || "?"}`]),
+          [["custom-adapter-ref", "custom ref…"]]
+        ),
+        cell.adapter,
+        (value) => {
+          cell.adapter = value;
+          renderCells();
+          renderValidation();
+        }
+      )
+    ),
+    cell.adapter === "custom-adapter-ref"
+      ? textInput(cell.customAdapterRef, (value) => {
+          cell.customAdapterRef = value;
+          renderValidation();
+        }, "local/<name>@<digest>")
+      : cell.adapter
+        ? el(
+            "p",
+            { className: "hint" },
+            `Runs the merged checkpoint (${adapterRef(cell, models)}) — install materializes it.`
+          )
+        : null,
     isCustom
       ? el(
           "div",
@@ -358,7 +408,8 @@ function renderCluster() {
     metricTile("workers", String(metrics.workers))
   );
   $("#cluster-hint").textContent =
-    "Estimates: disk = checkpoint weights · RAM/VRAM ≈ weights × 1.3 + 256 MB per worker." +
+    "Estimates cover ready cells only (id + at least one view). disk = checkpoint weights · " +
+    "RAM/VRAM ≈ weights × 1.3 + 256 MB per worker." +
     (metrics.unknown > 0 ? " Custom models carry no size data yet." : "");
   const progress = $("#download-progress");
   progress.max = Math.max(1, metrics.checkpoints);
@@ -391,7 +442,7 @@ async function handleDownload() {
 }
 
 async function handleSubmit() {
-  const problems = validateState(state);
+  const problems = validateState(state, models);
   if (problems.length > 0) {
     appendLog(`Cannot submit: ${problems[0]}`, "error");
     return;
@@ -417,7 +468,7 @@ async function handleSubmit() {
 
 function renderValidation() {
   renderCluster();
-  const problems = validateState(state);
+  const problems = validateState(state, models);
   const node = $("#validation");
   if (problems.length === 0) {
     node.className = "validation ok";
@@ -496,8 +547,8 @@ async function loadModels() {
     renderModelsTable();
     for (const cell of state.cells) {
       // the sentinel is a user choice, not a default
-      if (cell.model === "custom-hf-repo" || !models.some((model) => model.id === cell.model)) {
-        cell.model = models[0].id;
+      if (cell.model === "custom-hf-repo" || !modelChoices().some((model) => model.id === cell.model)) {
+        cell.model = modelChoices()[0].id;
       }
     }
     renderAll();

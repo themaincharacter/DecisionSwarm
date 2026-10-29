@@ -227,7 +227,9 @@ snippet is portable:
 
 `default_questions` appears only when the Adapter shipped `questions.json`, and question schemas
 are **never enforced** — starting material to edit, not a contract. `cell.adapter` accepts that
-`local/<name>@<digest>` ref or the registered id. `--patch MANIFEST --cell ID` is the only thing
+`local/<name>@<digest>` ref or the registered id. In the desktop GUI the same attach lives in
+each cell's **Adapter** picker (registered adapters or a custom ref); the editor refuses an
+adapter whose base does not match the cell's model. `--patch MANIFEST --cell ID` is the only thing
 that rewrites a Manifest, swapping that one cell's `model` and `adapter` and nothing else.
 
 ## Materialization: `decision-swarm adapt merge` and install

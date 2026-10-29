@@ -4,6 +4,9 @@
 
 const SLUG = /^[a-z0-9_-]+$/;
 const HF_REPO = /^[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*$/;
+// Portable adapter ref: local/<name>@<digest> (registry adapter ids are the
+// other accepted form; `adapt register` prints this one).
+const ADAPTER_REF = /^local\/[a-z0-9_-]+@[0-9a-f]{6,}$/;
 
 function parseParams(text) {
   if (!text) return null;
@@ -13,17 +16,28 @@ function parseParams(text) {
   return Math.round(parseFloat(match[1]) * scale);
 }
 
+// A cell joins the swarm (and therefore shows up in "Download") only once it
+// has an id, at least one bound view, and — for custom entries — a repo id.
+// Blank cells still sitting in the editor must not inflate the estimates: the
+// engine only fetches models referenced by manifest cells, which always carry
+// a non-empty views list.
+function cellIsReady(cell, byId) {
+  if (!cell.id || cell.views.length === 0) return false;
+  const entry = byId.get(cell.model);
+  const isCustom = !entry || entry.custom;
+  return !isCustom || Boolean((cell.customRepo || "").trim());
+}
+
 // Live cluster panel metrics (plan: cells filled, unique checkpoints, params,
 // est. disk, est. RAM/VRAM, workers). RAM estimate: on-disk weights x 1.3
 // plus 256 MB per worker process.
 export function clusterMetrics(state, models) {
   const byId = new Map(models.map((model) => [model.id, model]));
-  const filled = state.cells.filter(
-    (cell) => cell.id && cell.views.length > 0 && (cell.model !== "custom-hf-repo" || cell.customRepo.trim())
-  ).length;
+  const ready = state.cells.filter((cell) => cellIsReady(cell, byId));
+  const filled = ready.length;
 
   const checkpoints = new Map();
-  for (const cell of state.cells) {
+  for (const cell of ready) {
     const entry = byId.get(cell.model);
     const isCustom = !entry || entry.custom;
     const hfRepo = isCustom ? cell.customRepo.trim() : entry.hf_repo;
@@ -50,7 +64,7 @@ export function clusterMetrics(state, models) {
     bytes += checkpoint.bytes;
   }
 
-  const workers = state.cells.length;
+  const workers = ready.length;
   return {
     filled,
     totalSlots: 8,
@@ -75,6 +89,19 @@ export function questionToManifest(question) {
   return out;
 }
 
+// The wire form of a cell's adapter: the portable ref when the registry entry
+// carries one (self-contained in a bundle), else the entry id, else the typed
+// custom ref. Empty string means "no adapter".
+export function adapterRef(cell, models) {
+  if (cell.adapter === "custom-adapter-ref") return cell.customAdapterRef.trim();
+  if (!cell.adapter) return "";
+  const entry = models.find((model) => model.id === cell.adapter);
+  if (entry && entry.merged && entry.merged.hf_repo && entry.merged.revision) {
+    return `${entry.merged.hf_repo}@${entry.merged.revision}`;
+  }
+  return cell.adapter;
+}
+
 export function toManifest(state, models) {
   const byId = new Map(models.map((model) => [model.id, model]));
   return {
@@ -92,6 +119,10 @@ export function toManifest(state, models) {
         modality: isCustom ? cell.customModality : entry.modality,
         views: [...cell.views],
       };
+      const adapter = adapterRef(cell, models);
+      if (adapter) {
+        out.adapter = adapter;
+      }
       if (cell.questions.length > 0) {
         out.default_questions = Object.fromEntries(
           cell.questions.map((question) => [question.name, questionToManifest(question)])
@@ -107,7 +138,7 @@ export function toManifest(state, models) {
   };
 }
 
-export function validateState(state) {
+export function validateState(state, models = []) {
   const problems = [];
   if (!state.name.trim()) {
     problems.push("pack name is required");
@@ -139,6 +170,23 @@ export function validateState(state) {
     if (cell.model === "custom-hf-repo" && !HF_REPO.test(cell.customRepo.trim())) {
       problems.push(`${label}: custom model needs an org/name Hugging Face repo id`);
     }
+
+    // Adapter attach (0..1 per cell). The engine does not validate this; the
+    // editor refuses pairings that can only produce a broken merged checkpoint.
+    if (cell.adapter === "custom-adapter-ref") {
+      if (!ADAPTER_REF.test(cell.customAdapterRef.trim())) {
+        problems.push(`${label}: adapter ref must look like local/<name>@<digest>`);
+      }
+    } else if (cell.adapter) {
+      const adapterEntry = models.find((model) => model.id === cell.adapter && model.kind === "adapter");
+      if (adapterEntry && adapterEntry.base && cell.model !== "custom-hf-repo" && adapterEntry.base !== cell.model) {
+        problems.push(
+          `${label}: adapter "${cell.adapter}" is trained on ${adapterEntry.base}, ` +
+            `but this cell's model is ${cell.model} — pick the adapter's own base model`
+        );
+      }
+    }
+
     if (cell.views.length === 0) {
       problems.push(`${label}: bind at least one view`);
     }

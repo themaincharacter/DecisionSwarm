@@ -9,6 +9,7 @@ const isTauri = typeof window !== "undefined" && Boolean(window.__TAURI_INTERNAL
 const MOCK_MODELS = [
   {
     id: "laya-english",
+    kind: "checkpoint",
     hf_repo: "convaiinnovations/laya",
     subfolder: null,
     revision: "main",
@@ -55,7 +56,7 @@ const MOCK_MODELS = [
     package_source: "git+https://github.com/r33drichards/laya-vision",
     loader: "load_vlm",
     params: "201M",
-    download_bytes: 804000000,
+    download_bytes: 808285067,
     license: "weights: CC BY-NC-SA 4.0 / code: Apache-2.0",
     custom: false,
   },
@@ -74,6 +75,7 @@ const MOCK_MODELS = [
   },
   {
     id: "custom-hf-repo",
+    kind: "checkpoint",
     hf_repo: null,
     subfolder: null,
     revision: null,
@@ -84,6 +86,26 @@ const MOCK_MODELS = [
     download_bytes: null,
     license: null,
     custom: true,
+  },
+  // A trained adapter (what `decision-swarm adapt register` writes): a base
+  // ref + local files + the materialized merged-checkpoint ref.
+  {
+    id: "laya-english-submit-x",
+    kind: "adapter",
+    base: "laya-english",
+    path: "/mock/adapters/laya-english-submit-x",
+    merged: { hf_repo: "local/laya-english-submit-x", revision: "0123456789abcdef" },
+    hf_repo: null,
+    subfolder: null,
+    revision: null,
+    modality: "text",
+    package_source: "laya>=0.3.20",
+    loader: "load",
+    params: null,
+    download_bytes: null,
+    license: "Apache-2.0",
+    notes: "specialization: X = submit-button detection => noul accuracy",
+    custom: false,
   },
 ];
 
