@@ -501,7 +501,7 @@ dependencies = [
 
 [[package]]
 name = "decision-swarm-gui"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "tauri",
  "tauri-build",
