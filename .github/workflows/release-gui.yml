@@ -129,11 +129,15 @@ jobs:
           $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
           $out = "src-tauri/target/release/bundle/portable"
           New-Item -ItemType Directory -Force -Path $out | Out-Null
+          Copy-Item ../docs/agents/adapt.md adapt.md
           @(
             "Decision Swarm $version - portable Windows app.",
             "",
             "Unzip anywhere and run decision-swarm-gui.exe (keep decision-swarm.exe",
             "beside it: that is the bundled engine).",
+            "",
+            "adapt.md is the adaptation playbook: how to train a LoRA adapter for a",
+            "decision model and attach it to a cell.",
             "",
             "Needs the Microsoft Edge WebView2 runtime. Windows 11 and current",
             "Windows 10 already have it. On older Windows 10, install it first:",
@@ -141,7 +145,7 @@ jobs:
             "https://developer.microsoft.com/microsoft-edge/webview2/",
             "or directly: https://go.microsoft.com/fwlink/p/?LinkId=2124703"
           ) | Set-Content README.txt
-          Compress-Archive -Force -Path src-tauri/target/release/decision-swarm-gui.exe, src-tauri/target/release/decision-swarm.exe, README.txt -DestinationPath "$out/Decision Swarm_win_${version}_${{ matrix.arch }}-portable.zip"
+          Compress-Archive -Force -Path src-tauri/target/release/decision-swarm-gui.exe, src-tauri/target/release/decision-swarm.exe, README.txt, adapt.md -DestinationPath "$out/Decision Swarm_win_${version}_${{ matrix.arch }}-portable.zip"
 
       # Extension globs on purpose: each bundler leaves staging files/dirs
       # beside the installer (deb ar members, the AppImage AppDir, bundle_dmg.sh)

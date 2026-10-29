@@ -55,12 +55,6 @@ TEMPLATES_RELATIVE_PATH = ("templates", "runtime")
 TEMPLATES_BUNDLED_PATH = ("data", "templates", "runtime")
 """Template copy bundled into wheels and frozen executables."""
 
-ADAPT_DOC_RELATIVE_PATH = ("docs", "agents", "adapt.md")
-"""Location of the adaptation playbook inside the repository (and inside a pack)."""
-
-ADAPT_DOC_BUNDLED_PATH = ("data", "docs", "agents", "adapt.md")
-"""Playbook copy bundled into wheels and frozen executables."""
-
 CommitResolver = Callable[[registry.ModelEntry], "str | None"]
 """Resolves a registry entry's floating revision (e.g. ``main``) to a commit sha."""
 
@@ -149,24 +143,6 @@ def default_templates_dir() -> Path:
         if candidate.is_dir():
             return candidate
     raise PackError(f"{Path(*TEMPLATES_RELATIVE_PATH)} not found near {__file__}")
-
-
-def default_adapt_doc_path() -> Path:
-    """Locate the adaptation playbook: bundled copy, then the repository checkout.
-
-    The playbook ships inside every pack (at the same ``docs/agents/adapt.md``
-    path, so the engine's references to it stay truthful), so a consumer's agent
-    can specialize a base model without hunting for the repository.
-    """
-    module_dir = Path(__file__).resolve().parent
-    bundled = module_dir.joinpath(*ADAPT_DOC_BUNDLED_PATH)
-    if bundled.is_file():
-        return bundled
-    for parent in module_dir.parents:
-        candidate = parent.joinpath(*ADAPT_DOC_RELATIVE_PATH)
-        if candidate.is_file():
-            return candidate
-    raise PackError(f"{Path(*ADAPT_DOC_RELATIVE_PATH)} not found near {__file__}")
 
 
 def _render(text: str, mapping: Mapping[str, str]) -> str:
@@ -273,9 +249,9 @@ def _pack_readme(
         "",
         "## Adapting the models",
         "",
-        "The adaptation playbook ships at `docs/agents/adapt.md`: how to train a LoRA",
-        "adapter for one of this pack's base models, gate it, register it, and attach",
-        "it to a cell (`cell.adapter`).",
+        "`adapt.md` in the Decision Swarm download is the adaptation playbook: how to",
+        "train a LoRA adapter for one of this pack's base models, gate it, register it,",
+        "and attach it to a cell (`cell.adapter`).",
         "",
         "## Usage",
         "",
@@ -450,14 +426,11 @@ def build_pack(
     models_root: str | Path | None = None,
     registry_entries: Mapping[str, registry.ModelEntry] | None = None,
     templates_dir: str | Path | None = None,
-    adapt_doc: str | Path | None = None,
     resolve_commit: CommitResolver | None = None,
     models: list[PackModel] | None = None,
 ) -> Path:
     """Build a swarm pack directory: swarm.json, models.lock.json, runtime/, README.md.
 
-    ``docs/agents/adapt.md`` ships with every pack, so a consumer's agent can
-    adapt the pack's base models using the same playbook the engine references.
     Nothing is downloaded: the lockfile reads digests from the shared cache.
     ``resolve_commit`` opts into recording the commit each revision points at;
     pass ``models`` to reuse an already-collected lock record list.
@@ -518,12 +491,6 @@ def build_pack(
     (pack_dir / PACK_README_NAME).write_text(
         _pack_readme(manifest, models, slug, pack_dir), encoding="utf-8"
     )
-    # the adaptation playbook ships with every pack, at the path the engine
-    # names in its diagnostics (docs/agents/adapt.md)
-    adapt_source = Path(adapt_doc) if adapt_doc is not None else default_adapt_doc_path()
-    adapt_target = pack_dir.joinpath(*ADAPT_DOC_RELATIVE_PATH)
-    adapt_target.parent.mkdir(parents=True, exist_ok=True)
-    adapt_target.write_text(adapt_source.read_text(encoding="utf-8"), encoding="utf-8")
     (pack_dir / MCP_CONFIG_NAME).write_text(
         json.dumps(mcp_config(pack_dir), indent=2) + "\n", encoding="utf-8"
     )

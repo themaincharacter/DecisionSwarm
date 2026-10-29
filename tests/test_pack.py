@@ -77,16 +77,14 @@ def test_build_pack_writes_all_artifacts(
         "models.lock.json",
         "README.md",
         "mcp.json",
-        "docs/agents/adapt.md",
         "runtime/pyproject.toml",
         "runtime/src/browser_swarm/__init__.py",
         "runtime/src/browser_swarm/cli.py",
         "runtime/src/browser_swarm/swarm.json",
     ):
         assert (dest / relative).is_file(), f"missing {relative}"
-    playbook = (dest / "docs" / "agents" / "adapt.md").read_text(encoding="utf-8")
-    assert playbook.startswith("# Adapting")
-    assert "adapt validate" in playbook
+    # the adaptation playbook belongs to the release download, not to generated packs
+    assert not (dest / "docs").exists()
 
 
 def test_mcp_config_points_at_this_pack(
