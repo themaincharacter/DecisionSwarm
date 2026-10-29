@@ -39,6 +39,7 @@ packages = ["src/decision_swarm"]
 "registry/models.json" = "decision_swarm/data/registry/models.json"
 "templates/runtime" = "decision_swarm/data/templates/runtime"
 "data/adapt/must-not-regress.jsonl" = "decision_swarm/data/adapt/must-not-regress.jsonl"
+"docs/agents/adapt.md" = "decision_swarm/data/docs/agents/adapt.md"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

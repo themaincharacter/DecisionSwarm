@@ -68,6 +68,28 @@ def test_templates_resolve_bundled_copy_first(
     assert pack.default_templates_dir() == bundled
 
 
+def test_adapt_doc_resolves_bundled_copy_first(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_dir = _fake_module_dir(tmp_path)
+    bundled = module_dir / "data" / "docs" / "agents" / "adapt.md"
+    bundled.parent.mkdir(parents=True)
+    bundled.write_text("# Adapting\n", encoding="utf-8")
+    monkeypatch.setattr(pack, "__file__", str(module_dir / "pack.py"))
+
+    assert pack.default_adapt_doc_path() == bundled
+
+def test_adapt_doc_resolves_bundled_copy_first(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_dir = _fake_module_dir(tmp_path)
+    bundled = module_dir / "data" / "docs" / "agents" / "adapt.md"
+    bundled.parent.mkdir(parents=True)
+    bundled.write_text("# Adapting\n", encoding="utf-8")
+    monkeypatch.setattr(pack, "__file__", str(module_dir / "pack.py"))
+
+    assert pack.default_adapt_doc_path() == bundled
+
 def test_worker_source_root_is_importable_in_dev() -> None:
     root = Path(orchestrator._worker_source_root())
     assert (root / "decision_swarm" / "__init__.py").is_file()
