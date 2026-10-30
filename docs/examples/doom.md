@@ -1,3 +1,6 @@
+
+![Doom being played](./doom_example.gif)
+
 # Example: a swarm that plays Doom
 
 Two people do this. **You** build the swarm pack by hand in the desktop GUI — that is
@@ -414,45 +417,145 @@ geometry did that arithmetic, not the model.
 
 ## Findings: what the measurements said
 
-A summary of the verified run, because the negative results are the useful part. The
-numbers come from one Windows machine (RTX 2070) playing the `basic` scenario; the driver
-itself is deliberately not part of this example — write your own for your machine — but
-these conclusions should carry over.
+Three experiments in a row, each one forced by the previous one's failure. Rows are the
+ViZDoom `basic` scenario unless they say `defend_the_center`; "decisions" is the number of
+swarm calls until the kill, so lower is better.
 
-**Two cells answering one question is the wrong use of a pack.** The first version asked
-both cells the same `next_action` choice and pooled the votes. The text cell answered it
-at 45.3% validation accuracy (45.8% train — near chance on three options) against 78.8%
-for the vision cell, and a calibrated opinion pool fitted its weight to **0.00**, leaving
-the result identical to vision alone. A second vote on the same question is not a second
-opinion.
+### 1. Pooling two votes on one question buys nothing
 
-**Role arbitration is the pattern that works.** Vision proposes the action; the `scene`
-geometry vetoes or redirects it; `ATTACK` requires a centred, attack-ready target. Against
-a scripted geometry teacher that policy agreed on 99.7% of 967 validation decisions, for
-the same inference cost — the extra work is arithmetic, not another model call. Treat the
-99.7% as agreement with the teacher, not as better play, which is why the gate width was
-A/B'd on 18 paired seeds:
+First version: both cells were asked the same three-action question, with temperatures and
+an opinion-pool weight fitted on 967 decisions from 40 episodes.
 
-| policy | decisions | kills | decisions/kill | off-centre ATTACKs |
+| policy | validation accuracy | train accuracy | note |
+|---|---:|---:|---|
+| vision only | 78.8% | 84.6% | ECE 0.046 — already well calibrated |
+| text cell only | 45.3% | 45.8% | ECE 0.059; near-uniform, not complementary |
+| calibrated opinion pool | 78.8% | 84.6% | **fitted text weight 0.00** |
+| bearing gate | 76.1% | 80.4% | 15° threshold; does not generalise |
+| role arbitration | **99.7%** | 100.0% | geometry veto + direction |
+
+**The fitted weight of the second cell's vote was zero.** Two cells answering one question
+are one opinion with extra latency. Temperatures fitted to 0.85 (vision) and 1.80 (text),
+but neither improved validation NLL *and* ECE together, so the applied calibration is
+identity. The 99.7% row is also misleading — it measures agreement with a scripted 2.5°
+teacher, not play. The next section is why that matters.
+
+### 2. Untrained role arbitration was not better than vision
+
+Here vision proposes the button and the driver's measured geometry vetoes it. 18 paired
+seeds, same engine, same model, only the aggregation rule changed:
+
+| policy | decisions | kills | decisions/kill | off-centre ATTACKs | timeouts |
+|---|---:|---:|---:|---:|---:|
+| vision only | **61** | 18 | **3.39** | 5 | 0 |
+| role, 2.5° gate | 70 | 18 | 3.89 | 0 | 0 |
+| role, 5.0° gate | **59** | 18 | **3.28** | 4 | 0 |
+
+Paired per seed: role at 2.5° was worse than vision on 4 seeds, better on 1, equal on 13.
+Role at 5.0° was better on 1, equal on 17, **worse on 0**. A controlled synchronous probe
+put the hit envelope at ±5.5° (157/160 hits; all three misses at 5.9°), so **the 2.5° veto
+was turning away from shots that hit**. The veto has real value — it removed wild
+off-centre shots — but at the wrong width it costs as much as it saves. It also costs
+nothing at inference time: the extra work is arithmetic on the driver's own sensor, not
+another model call. **5.0° is the width to copy.**
+
+The other untrained variant was worse still: vision fires, the text cell steers.
+
+| policy | decisions | kills | decisions/kill | text steered | agreed with vision |
+|---|---:|---:|---:|---:|---:|
+| vision only | 61 | 18 | 3.39 | — | — |
+| vision fires + text steers | 111 | 18 | 6.17 | 31/111 | 13 (42%) |
+
+Disagreement caused turn oscillation: seed 11 went from 4 to 23 decisions, seed 8 from 3 to
+13. At 45.3% three-action accuracy the text cell is **not a usable steering sensor**.
+
+**Net: untrained role arbitration was not better than vision alone.** The geometry veto
+removed bad shots, the text cell's steering added worse ones, and the two cancelled at best.
+Any remaining gain had to come from training a cell for the role it was being given.
+
+### 3. A LoRA adapter on the text cell matched vision on one enemy
+
+The fix was to change the question, not the policy: a LoRA adapter on the existing text
+checkpoint answering only `MOVE_LEFT` / `MOVE_RIGHT`, so the cell can never vote on firing
+and only ever says which way to turn. Firing stays with vision.
+
+| held-out slice | adapter | base |
+|---|---:|---:|
+| multi-enemy steering (450) | **86.9%** | 48.9% |
+| single-enemy steering (114) | **100.0%** | 59.7% |
+| guard (30) | **100.0%** | 50.0% |
+
+In the game, with the same 18 seeds:
+
+| policy | decisions | kills | decisions/kill | steering correct |
 |---|---:|---:|---:|---:|
-| vision only | 61 | 18 | 3.39 | 5 |
-| role, 2.5° | 70 | 18 | 3.89 | 0 |
-| role, 5.0° | 59 | 18 | 3.28 | 4 |
+| vision only | 61 | 18 | 3.39 | — |
+| hybrid, base text | 111 | 18 | 6.17 | 13/31 (42%) |
+| hybrid, adapter | **61** | **18** | **3.39** | **41/41 (100%)** |
 
-Role at 2.5° was worse than vision alone on 4 seeds, better on 1 and equal on 13; at 5.0°
-it was better on 1, equal on 17 and worse on 0. The measured hit envelope is about ±5.5°,
-so a 2.5° veto turns away shots that would have hit. **5.0° is the configuration to copy.**
+**The adapter brought the hybrid to exactly vision-only on all 18 seeds — equal on 18,
+better on 0, worse on 0.** That is the first evidence that a trained second cell can carry
+a real role instead of being dead weight.
 
-**The learned critic was a negative result.** Asked "will this shot hit?" (`hit_now`), the
-text cell never left 0.42–0.48 over 73 decisions, while all 24 shots that passed the gate
-hit. Its AUC against a scripted hitbox was 0.60. At the uncalibrated 0.5 threshold it
-vetoed every shot: 50 decisions, zero fired, score 0. Keep the answer as a logged
-observation channel; do not gate the action on it.
+### 4. On multiple monsters the swarm steered better and played worse
 
-**End result: it plays, and it is a thin demo.** The verified episodes kill in 4–6
-decisions — `KILLCOUNT` 1, 0.7–1.0 s of video, ~80–90 ms per decision warm at 512 px.
-That is not impressive Doom: the scenario is one monster in an open room and the vision
-checkpoint has seen it in training. The value is architectural — a vision cell, a text
-cell and a geometry veto sharing one pack, one long-lived `serve` process and one log. The
-artifact worth reading is the log of decisions where the role authority overrode the
-proposal, not the score.
+The single-enemy result did not transfer. First multi-monster test on `defend_the_center`
+(10 seeds) with the same v1 adapter:
+
+| policy | kills | deaths | multi-enemy steering |
+|---|---:|---:|---:|
+| vision only | **29** | **0** | 78.9% |
+| hybrid, base text | 25 | 0 | 59.3–81.5% |
+| hybrid, v1 adapter | 10 | 4 | 22.2–50.0% |
+
+The synthetic 86.9% was a coverage gap: close and large monsters, non-monster objects
+(`Blood`), an unseen enemy (`MarineChainsawVzd`), and a far faster turn rate than the
+synthetic set contained.
+
+So the question was widened to three options — `MOVE_LEFT` / `MOVE_RIGHT` / `CENTER`, where
+`CENTER` holds the aim — and the corpus was rebuilt from **2,400 train / 600 eval** examples:
+real gameplay frames, real `defend_the_center` frames, and synthetic close/large/non-monster
+cases. **Three epochs at micro-batch 2 took 22 minutes 34 seconds** on one RTX 2070.
+Held-out accuracy 74.5% (multi 63.4%, real multi 84.0%, guard 91.7%), gate PASS.
+
+| test | decisions | kills | deaths | steering accuracy |
+|---|---:|---:|---:|---:|
+| basic, 18 seeds | 61 | 18 | 0 | 41/41 (100%) |
+| multi search, 10 seeds | 466 | 19 | 6 | **95.65%** |
+
+**Steering got better than vision's own 78.9% and the swarm still played worse:** 19 kills
+and 6 deaths against vision's 29 and 0. Vision fires off-target in 358 of 372 multi-monster
+decisions and never dies; the hybrid keeps the aim and loses the dodging. **The bottleneck
+moved from steering to firing and survival** — a better sensor on a role the policy does not
+own cannot rescue play.
+
+A `CENTER = keep turning` variant was also tried and rejected: kills/deaths fell from 19/6
+to 13/5 and steering from 95.65% to 57.89%, because it overrode correct centring decisions.
+`CENTER` has to mean "hold".
+
+
+### What this means
+
+- **Role arbitration is the way to use a pack of decision models.** Not a vote. Asking two
+  cells the same question produced a fitted weight of zero; giving them different jobs
+  produced the only useful signal in the whole experiment.
+- **The useful half of the text cell was its input, not its answer.** In the untrained
+  configuration the veto worked because the driver's measured geometry was authoritative,
+  not because the model judged well.
+- **Training looks necessary** for the second cell to earn its keep: untrained it was worse
+  than vision alone (6.17 vs 3.39 decisions per kill); one adapter closed that to parity.
+- **Training is cheap.** ***22m34s on a single consumer GPU for the second adapter. This is a
+  few-cup-of-coffee experiment, not a research programme — which makes "train the role you
+  actually need" a realistic default rather than a last resort.***
+- **Accuracy is the wrong metric.** Steering accuracy rose while survival fell. The number
+  that matters is kills per death on the scenario you care about.
+- **Open problem:** single-enemy parity does not transfer to many enemies. The next
+  experiment should train the half the geometry cannot supply — the firing/dodging
+  decision — on real multi-monster frames, and measure kills per death rather than
+  agreement with a teacher.
+
+## TL;DR:
+
+- "Role Arbitration" is the conceptual way to think about swarms of decision models.
+- Training is necessary and thankfully cheap. I played very little role in training, I was able to delegate all of it to an LLM. The only involvement I had was calling out overfitting.
+- Doom was a dumb thing for me to expirement with because the vision model I used was trained on it. 

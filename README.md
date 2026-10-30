@@ -6,10 +6,14 @@ runnable artifact: an installable Python library, a bash-callable CLI, a long-li
 decision service a real-time consumer can query at model latency, and a pack an AI
 agent can call as two tools.
 
-> **Status: Phases 0–5 done.** Core (manifest, registry, cache, packs), runtime
-> (workers, protocol, orchestrator, the warm `serve` service), the CLI + per-OS
-> launcher builds, and the desktop GUI are in place. Functionality lands per the
-> [Roadmap](#roadmap).
+![GUI](./gui.PNG)
+
+## What even is this?
+A way to package decision models such that they can be run in a "swarm". basically two models running at the same time.
+
+## But why?
+The advantage here is in (1) different views and (2) different training. The idea being that if you have N specialized models running at the same time. You can 
+ask those models each different questions pertaining to their specialty simultaneously. 
 
 ## Concept
 
@@ -266,18 +270,6 @@ defaults so answers stay comparable across queries; each query may override them
 - **Env isolation** — one venv per unique `package_source`. Required in practice: the
   `laya-vision` fork installs its own `laya` package and cannot coexist with PyPI `laya`,
   and it needs `transformers >= 5.3` while PyPI `laya` pins its own stack.
-
-## Roadmap
-
-| Phase | Scope |
-|---|---|
-| **0 — Scaffold** | repo, package skeleton, CLI surface, registry, CI ✅ |
-| **1 — Core** | manifest schema + validation, registry access, cache manager (fetch / sha256 / dedup), pack builder ✅ |
-| **2 — Runtime** | worker process + stdio protocol, env isolation, parallel cell execution, result schema ✅ |
-| **3 — CLI + exes** | `run` / `fetch` / `install` / `inspect`, offline mode, PyInstaller per-OS builds ✅ |
-| **4 — GUI** | Tauri app: cell grid, cluster panel, Download, Submit → pack ✅ |
-| **5 — Serve** | long-lived JSONL decision service (`serve`) for real-time consumers ✅ |
-| Deferred | aggregation/consensus, npm adapter, Godot addon, HTTP transport (stdio `serve` is done) |
 
 ## Licensing
 
